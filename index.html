@@ -190,11 +190,11 @@
             </div>
         </main>
 
-        <!-- 修正後的彈窗（放置於 #app 底部確保邏輯優先） -->
+        <!-- 彈窗（改用 v-show 確保穩定性） -->
         <transition name="fade">
-            <div v-if="showModal" class="fixed inset-0 z-[200] flex items-center justify-center p-6" style="display: none;" :style="{ display: showModal ? 'flex' : 'none' }">
+            <div v-show="showModal" class="fixed inset-0 z-[200] flex items-center justify-center p-6">
                 <!-- 遮罩層 -->
-                <div class="absolute inset-0 bg-white/40 backdrop-blur-md" @click="closeModal"></div>
+                <div class="absolute inset-0 bg-white/60 backdrop-blur-md" @click="closeModal"></div>
                 
                 <!-- 視窗主體 -->
                 <div class="relative bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-pink-50 p-8 space-y-6">
@@ -262,10 +262,20 @@
 
                 const getDocRef = (uid) => doc(db, 'artifacts', appId, 'users', uid, 'data', 'itinerary-data');
 
+                const saveToCloud = async () => {
+                    if (!user.value) return;
+                    loading.value = true;
+                    try {
+                        await setDoc(getDocRef(user.value.uid), {
+                            itineraries: JSON.parse(JSON.stringify(itineraries.value)),
+                            currency: JSON.parse(JSON.stringify(currency)),
+                            lastUpdated: new Date().getTime()
+                        });
+                    } catch (e) { console.error("Save Error:", e); }
+                    finally { loading.value = false; }
+                };
+
                 onMounted(async () => {
-                    // 初始確保關閉狀態
-                    showModal.value = false;
-                    
                     setTimeout(createPetals, 500);
                     
                     try {
@@ -290,19 +300,6 @@
                         loading.value = false;
                     }
                 });
-
-                const saveToCloud = async () => {
-                    if (!user.value) return;
-                    loading.value = true;
-                    try {
-                        await setDoc(getDocRef(user.value.uid), {
-                            itineraries: JSON.parse(JSON.stringify(itineraries.value)),
-                            currency: JSON.parse(JSON.stringify(currency)),
-                            lastUpdated: new Date().getTime()
-                        });
-                    } catch (e) { console.error("Save Error:", e); }
-                    finally { loading.value = false; }
-                };
 
                 const convert = (source) => {
                     const JPY_TO_TWD = 0.211;
