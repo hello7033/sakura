@@ -19,43 +19,38 @@
         }
 
         .glass-panel {
-            background: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.9);
         }
 
         .sakura-header { 
-            background: linear-gradient(135deg, rgba(255, 241, 242, 0.8) 0%, rgba(255, 255, 255, 0.5) 100%); 
+            background: linear-gradient(135deg, rgba(255, 241, 242, 0.9) 0%, rgba(255, 255, 255, 0.6) 100%); 
         }
 
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        .modal-overlay { 
-            background-color: rgba(255, 255, 255, 0.4); 
-            backdrop-filter: blur(10px); 
-        }
-
+        /* 3D 櫻花動畫修正 */
         @keyframes sakura-fall {
             0% { transform: translate(0, -10%) rotateX(0deg) rotateY(0deg); opacity: 0; }
-            15% { opacity: 0.6; }
-            100% { transform: translate(100px, 110vh) rotateX(360deg) rotateY(360deg); opacity: 0; }
+            10% { opacity: 0.8; }
+            90% { opacity: 0.8; }
+            100% { transform: translate(200px, 110vh) rotateX(720deg) rotateY(360deg); opacity: 0; }
         }
 
         .sakura-container {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 5;
+            z-index: 0; /* 放在最底層背景 */
             overflow: hidden;
-            perspective: 1000px;
+            perspective: 1200px;
         }
 
         .petal {
             position: absolute;
-            background: linear-gradient(135deg, #fce7eb 0%, #fff 100%);
+            background: linear-gradient(135deg, #ffd1dc 0%, #fff 100%);
             border-radius: 100% 0 100% 0;
-            opacity: 0.6;
+            opacity: 0;
             animation: sakura-fall linear infinite;
             transform-style: preserve-3d;
             box-shadow: 0 2px 5px rgba(255, 182, 193, 0.2);
@@ -65,98 +60,117 @@
         .text-soft-pink { color: #f2bac5; }
         .bg-soft-pink { background-color: #f2bac5; }
 
-        /* 載入指示器 */
         .loading-dot { animation: pulse 1.5s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
     </style>
 </head>
 <body class="pb-12">
+    <!-- 櫻花容器 -->
     <div class="sakura-container" id="sakura-box"></div>
 
     <div id="app" class="max-w-md mx-auto min-h-screen relative z-10">
         <!-- 雲端狀態提示 -->
-        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-white/80 backdrop-blur px-4 py-1.5 rounded-full shadow-sm border border-pink-50 text-[10px] text-soft-pink font-bold tracking-widest flex items-center gap-2">
+        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-white/90 backdrop-blur px-4 py-1.5 rounded-full shadow-md border border-pink-50 text-[10px] text-soft-pink font-bold tracking-widest flex items-center gap-2">
             <span class="w-1.5 h-1.5 bg-soft-pink rounded-full loading-dot"></span>
             CLOUD SYNCING...
         </div>
 
-        <header class="sakura-header p-10 text-slate-500 rounded-b-[4rem] relative overflow-hidden">
-            <button @click="toggleLang" class="absolute top-8 right-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-0.5">
+        <header class="sakura-header p-10 text-slate-500 rounded-b-[4rem] relative overflow-hidden shadow-sm">
+            <button @click="toggleLang" class="absolute top-8 right-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-0.5 z-20">
                 {{ lang === 'zh' ? 'English' : '中文' }}
             </button>
-            <div class="space-y-2">
+            
+            <div class="space-y-3 relative z-10">
                 <p class="text-[10px] tracking-[0.4em] font-bold text-soft-pink uppercase">Tokyo Journey</p>
                 <h1 class="text-3xl font-light tracking-tight text-slate-700">Spring <span class="italic font-serif">2026</span></h1>
-                <div class="flex items-center gap-2 text-[10px] font-medium text-slate-400 tracking-wider">
-                    <i class="fa-solid fa-calendar-days text-[9px]"></i>
-                    <span>APRIL 02 — APRIL 06</span>
+                
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 text-[10px] font-medium text-slate-400 tracking-wider">
+                        <i class="fa-solid fa-calendar-days text-[9px]"></i>
+                        <span>APRIL 02 — APRIL 06</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-[10px] font-bold text-white bg-soft-pink/80 px-3 py-1 rounded-full shadow-sm">
+                        <i class="fa-solid fa-cloud-sun"></i>
+                        <span>TOKYO 18°C</span>
+                    </div>
                 </div>
             </div>
         </header>
 
-        <div class="mx-6 -mt-8 space-y-4">
-            <section class="glass-panel rounded-[2.5rem] shadow-sm p-5 flex items-center justify-between">
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 bg-white/50 rounded-full flex items-center justify-center text-xl">🌸</div>
-                    <div>
-                        <div class="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Cloud Storage</div>
-                        <div class="text-xs font-medium text-slate-500">{{ user ? '已連線雲端' : '同步中...' }}</div>
+        <div class="mx-6 -mt-8 space-y-4 relative z-20">
+            <!-- 雲端狀態與匯率計算機卡片 -->
+            <section class="glass-panel rounded-[2.5rem] shadow-lg p-6 space-y-5">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-sm border border-pink-50">🌸</div>
+                        <div>
+                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cloud Storage</div>
+                            <div class="text-xs font-semibold text-slate-600">{{ user ? (lang === 'zh' ? '已連線' : 'Connected') : 'Connecting...' }}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[9px] text-slate-300 uppercase font-bold tracking-tighter">User ID</div>
+                        <div class="text-[8px] text-slate-400 font-mono bg-white px-2 py-1 rounded-md border border-slate-50">{{ user?.uid ? user.uid.substring(0,8) : '...' }}</div>
                     </div>
                 </div>
-                <div class="text-right">
-                    <div class="text-[9px] text-slate-300 uppercase font-bold tracking-tighter">User ID</div>
-                    <div class="text-[8px] text-slate-400 font-mono">{{ user?.uid ? user.uid.substring(0,8) + '...' : 'Guest' }}</div>
-                </div>
-            </section>
 
-            <section class="glass-panel rounded-[2.5rem] shadow-sm p-6">
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="space-y-1">
-                        <label class="text-[8px] font-bold text-slate-300 uppercase tracking-widest block text-center">JPY</label>
-                        <input type="number" v-model="currency.jpy" @input="convert('jpy')" class="w-full bg-transparent border-b border-slate-100 py-1 text-center text-sm font-medium text-slate-600 focus:outline-none focus:border-soft-pink">
+                <!-- 匯率轉換區塊 -->
+                <div class="pt-5 border-t border-slate-100">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-comments-dollar text-soft-pink"></i> {{ lang === 'zh' ? '匯率換算器' : 'Converter' }}
                     </div>
-                    <div class="space-y-1">
-                        <label class="text-[8px] font-bold text-slate-300 uppercase tracking-widest block text-center">AUD</label>
-                        <input type="number" v-model="currency.aud" @input="convert('aud')" class="w-full bg-transparent border-b border-slate-100 py-1 text-center text-sm font-medium text-slate-600 focus:outline-none focus:border-soft-pink">
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-[8px] font-bold text-slate-300 uppercase tracking-widest block text-center">TWD</label>
-                        <input type="number" v-model="currency.twd" @input="convert('twd')" class="w-full bg-transparent border-b border-slate-100 py-1 text-center text-sm font-medium text-slate-600 focus:outline-none focus:border-soft-pink">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="space-y-1.5">
+                            <label class="text-[9px] font-bold text-slate-400 block ml-1 uppercase">Jpy</label>
+                            <input type="number" v-model="currency.jpy" @input="convert('jpy')" class="w-full bg-white/80 border border-slate-100 rounded-xl py-2.5 px-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100 transition-all">
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="text-[9px] font-bold text-slate-400 block ml-1 uppercase">Twd</label>
+                            <input type="number" v-model="currency.twd" @input="convert('twd')" class="w-full bg-white/80 border border-slate-100 rounded-xl py-2.5 px-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100 transition-all">
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="text-[9px] font-bold text-slate-400 block ml-1 uppercase">Aud</label>
+                            <input type="number" v-model="currency.aud" @input="convert('aud')" class="w-full bg-white/80 border border-slate-100 rounded-xl py-2.5 px-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100 transition-all">
+                        </div>
                     </div>
                 </div>
             </section>
         </div>
 
-        <nav class="flex justify-center gap-6 px-4 mt-10 sticky top-0 py-4 z-10 bg-white/10 backdrop-blur-sm">
+        <!-- 天數導覽 -->
+        <nav class="flex justify-center gap-6 px-4 mt-8 sticky top-0 py-4 z-30 bg-white/30 backdrop-blur-md">
             <button v-for="day in 5" :key="day" 
                 @click="currentDay = day"
                 :class="['text-[11px] transition-all relative pb-1 tracking-widest', 
-                         currentDay === day ? 'text-soft-pink font-bold' : 'text-slate-300']">
+                         currentDay === day ? 'text-soft-pink font-bold scale-110' : 'text-slate-300']">
                 0{{ day }}
-                <span v-if="currentDay === day" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-soft-pink rounded-full"></span>
+                <span v-if="currentDay === day" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-soft-pink rounded-full"></span>
             </button>
         </nav>
 
-        <main class="p-6 pt-2 min-h-[500px]">
+        <main class="p-6 pt-2 min-h-[500px] relative z-20">
             <div class="mb-12 text-center">
                 <h2 class="text-xl font-light text-slate-600 tracking-widest uppercase">{{ itineraries[currentDay-1]?.title[lang] }}</h2>
-                <div class="w-8 h-[1px] bg-soft-pink mx-auto mt-2"></div>
+                <div class="w-8 h-[1px] bg-soft-pink mx-auto mt-2 opacity-50"></div>
             </div>
 
             <div class="space-y-8">
                 <div v-for="(item, index) in itineraries[currentDay-1]?.events" :key="index" class="relative group">
                     <div class="flex gap-6">
-                        <div class="w-10 text-[9px] font-bold text-slate-300 pt-1 tracking-tighter uppercase text-right">
+                        <div class="w-12 text-[10px] font-bold text-slate-300 pt-1 tracking-tighter uppercase text-right">
                             {{ item.time[lang] || item.time }}
                         </div>
                         
-                        <div class="flex-1 glass-panel p-6 rounded-[2rem] relative">
-                            <button @click="removeEvent(index)" class="absolute top-4 right-4 text-slate-200 hover:text-red-200 transition-colors opacity-0 group-hover:opacity-100">
-                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                        <div class="flex-1 glass-panel p-6 rounded-[2.2rem] relative hover:shadow-md transition-all">
+                            <button @click="removeEvent(index)" class="absolute top-4 right-4 text-slate-200 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+                                <i class="fa-solid fa-trash-can text-[10px]"></i>
                             </button>
                             
                             <h3 class="font-medium text-slate-600 mb-2 flex items-center gap-2 text-sm">
-                                <span class="w-1.5 h-1.5 rounded-full bg-soft-pink"></span>
+                                <span class="w-2 h-2 rounded-full bg-soft-pink/50"></span>
                                 {{ item.location[lang] || item.location }}
                             </h3>
                             <p class="text-[11px] text-slate-400 leading-relaxed font-light">{{ item.desc[lang] || item.desc }}</p>
@@ -164,58 +178,71 @@
                     </div>
                 </div>
 
-                <button @click="openModal" class="ml-16 mr-0 py-4 glass-panel rounded-[1.5rem] text-slate-300 hover:text-soft-pink transition-all flex items-center justify-center gap-3 text-[10px] font-bold tracking-widest uppercase border-dashed border border-slate-100 w-[calc(100%-64px)]">
+                <button @click="openModal" class="ml-16 py-5 glass-panel rounded-[1.8rem] text-slate-400 hover:text-soft-pink hover:border-soft-pink transition-all flex items-center justify-center gap-3 text-[10px] font-bold tracking-widest uppercase border-dashed border-2 border-slate-100 w-[calc(100%-64px)] shadow-sm">
                     <i class="fa-solid fa-plus-circle"></i>
-                    Add Event
+                    {{ lang === 'zh' ? '新增行程' : 'Add Event' }}
                 </button>
             </div>
         </main>
 
+        <!-- 彈窗 -->
         <transition name="fade">
-            <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 modal-overlay">
-                <div class="bg-white/95 w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden border border-white">
-                    <div class="p-8 space-y-6">
-                        <div class="flex justify-between items-center mb-2">
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">New Schedule</h3>
-                            <button @click="closeModal" class="text-slate-300"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
-                        <input v-model="newEvent.time" type="text" placeholder="Time" class="w-full bg-transparent border-b border-slate-100 py-3 text-sm focus:outline-none focus:border-soft-pink">
-                        <input v-model="newEvent.location" type="text" placeholder="Destination" class="w-full bg-transparent border-b border-slate-100 py-3 text-sm focus:outline-none focus:border-soft-pink">
-                        <textarea v-model="newEvent.desc" rows="2" placeholder="Notes" class="w-full bg-transparent border-b border-slate-100 py-3 text-sm focus:outline-none focus:border-soft-pink resize-none"></textarea>
-                        <button @click="addEvent" class="w-full py-4 bg-slate-800 text-white rounded-2xl text-[10px] font-bold tracking-[0.3em] uppercase shadow-lg">
-                            Confirm
-                        </button>
+            <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-white/40 backdrop-blur-md">
+                <div class="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-pink-50 p-8 space-y-6">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">{{ lang === 'zh' ? '建立新行程' : 'New Schedule' }}</h3>
+                        <button @click="closeModal" class="text-slate-300 hover:text-slate-500 transition-colors"><i class="fa-solid fa-xmark"></i></button>
                     </div>
+                    
+                    <div class="space-y-4">
+                        <div class="relative">
+                            <i class="fa-regular fa-clock absolute left-0 top-3 text-slate-300 text-xs"></i>
+                            <input v-model="newEvent.time" type="text" :placeholder="lang === 'zh' ? '時間 (如 10:00)' : 'Time'" class="w-full bg-transparent border-b border-slate-100 pl-6 py-3 text-sm focus:outline-none focus:border-soft-pink transition-all">
+                        </div>
+                        <div class="relative">
+                            <i class="fa-solid fa-location-dot absolute left-0 top-3 text-slate-300 text-xs"></i>
+                            <input v-model="newEvent.location" type="text" :placeholder="lang === 'zh' ? '目的地' : 'Destination'" class="w-full bg-transparent border-b border-slate-100 pl-6 py-3 text-sm focus:outline-none focus:border-soft-pink transition-all">
+                        </div>
+                        <div class="relative">
+                            <i class="fa-solid fa-pen absolute left-0 top-3 text-slate-300 text-xs"></i>
+                            <textarea v-model="newEvent.desc" rows="2" :placeholder="lang === 'zh' ? '備註或筆記' : 'Notes'" class="w-full bg-transparent border-b border-slate-100 pl-6 py-3 text-sm focus:outline-none focus:border-soft-pink resize-none transition-all"></textarea>
+                        </div>
+                    </div>
+                    
+                    <button 
+                        @click="addEvent" 
+                        :disabled="loading || !user || !newEvent.location"
+                        :class="['w-full py-4 rounded-2xl text-[10px] font-bold tracking-[0.3em] uppercase shadow-lg transition-all', 
+                                 (loading || !user || !newEvent.location) ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-800 text-white active:scale-95 shadow-slate-200']">
+                        {{ (loading || !user) ? 'Syncing...' : (lang === 'zh' ? '確認新增' : 'Confirm') }}
+                    </button>
                 </div>
             </div>
         </transition>
     </div>
 
-    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
-        import { createApp, ref, reactive, onMounted, watch } from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { createApp, ref, reactive, onMounted } from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
 
-        // Firebase 設定
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-sakura-app';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-sakura-app-v2';
 
         createApp({
             setup() {
                 const currentDay = ref(1);
                 const lang = ref('zh');
-                const currency = reactive({ jpy: 1000, aud: 10, twd: 210 });
+                const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
                 const showModal = ref(false);
                 const newEvent = reactive({ time: '', location: '', desc: '' });
                 const user = ref(null);
                 const loading = ref(true);
 
-                // 初始行程資料
                 const itineraries = ref([
                     { title: { zh: '啟程：櫻色東京', en: 'Sakura Arrival' }, events: [] },
                     { title: { zh: '御苑：花之野餐', en: 'Gyoen Picnic' }, events: [] },
@@ -224,99 +251,103 @@
                     { title: { zh: '歸途：上野巡禮', en: 'Ueno Farewell' }, events: [] }
                 ]);
 
-                // 雲端儲存路徑
-                const getDocRef = () => doc(db, 'artifacts', appId, 'users', user.value.uid, 'itinerary-data');
+                const getDocRef = (uid) => doc(db, 'artifacts', appId, 'users', uid, 'data', 'itinerary-data');
 
-                // 認證與監聽
                 onMounted(async () => {
-                    createPetals();
+                    // 延遲執行櫻花動畫，確保容器已掛載
+                    setTimeout(createPetals, 500);
                     
-                    // 匿名登入
-                    await signInAnonymously(auth);
-                    
-                    onAuthStateChanged(auth, async (u) => {
-                        if (u) {
-                            user.value = u;
-                            // 監聽雲端資料變化
-                            onSnapshot(getDocRef(), (docSnap) => {
-                                if (docSnap.exists()) {
-                                    itineraries.value = docSnap.data().itineraries;
-                                } else {
-                                    // 若雲端沒資料，初始化一組
-                                    saveToCloud();
-                                }
-                                loading.value = false;
-                            }, (error) => {
-                                console.error("Snapshot error:", error);
-                                loading.value = false;
-                            });
-                        }
-                    });
+                    try {
+                        const userCredential = await signInAnonymously(auth);
+                        user.value = userCredential.user;
+                        
+                        onSnapshot(getDocRef(user.value.uid), (docSnap) => {
+                            if (docSnap.exists()) {
+                                const data = docSnap.data();
+                                if (data.itineraries) itineraries.value = data.itineraries;
+                                if (data.currency) Object.assign(currency, data.currency);
+                            } else {
+                                saveToCloud();
+                            }
+                            loading.value = false;
+                        }, (err) => {
+                            console.error("Firestore Error:", err);
+                            loading.value = false;
+                        });
+                    } catch (error) {
+                        console.error("Auth Error:", error);
+                        loading.value = false;
+                    }
                 });
 
-                // 儲存至雲端
                 const saveToCloud = async () => {
                     if (!user.value) return;
                     loading.value = true;
                     try {
-                        await setDoc(getDocRef(), {
+                        await setDoc(getDocRef(user.value.uid), {
                             itineraries: JSON.parse(JSON.stringify(itineraries.value)),
+                            currency: JSON.parse(JSON.stringify(currency)),
                             lastUpdated: new Date().getTime()
                         });
-                    } catch (e) {
-                        console.error("Save error:", e);
-                    } finally {
-                        loading.value = false;
-                    }
+                    } catch (e) { console.error("Save Error:", e); }
+                    finally { loading.value = false; }
                 };
 
                 const convert = (source) => {
-                    const JPY_TO_TWD = 0.21;
-                    const AUD_TO_TWD = 21.0;
+                    const JPY_TO_TWD = 0.211;
+                    const AUD_TO_TWD = 20.85;
                     if (source === 'jpy') {
-                        currency.twd = parseFloat((currency.jpy * JPY_TO_TWD).toFixed(1));
-                        currency.aud = parseFloat((currency.twd / AUD_TO_TWD).toFixed(1));
-                    } else if (source === 'aud') {
-                        currency.twd = parseFloat((currency.aud * AUD_TO_TWD).toFixed(1));
-                        currency.jpy = parseFloat((currency.twd / JPY_TO_TWD).toFixed(1));
+                        currency.twd = Math.round(currency.jpy * JPY_TO_TWD);
+                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
                     } else if (source === 'twd') {
-                        currency.jpy = parseFloat((currency.twd / JPY_TO_TWD).toFixed(1));
-                        currency.aud = parseFloat((currency.twd / AUD_TO_TWD).toFixed(1));
+                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
+                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
+                    } else if (source === 'aud') {
+                        currency.twd = Math.round(currency.aud * AUD_TO_TWD);
+                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
                     }
+                    saveToCloud();
                 };
 
                 const toggleLang = () => lang.value = lang.value === 'zh' ? 'en' : 'zh';
                 const openModal = () => showModal.value = true;
-                const closeModal = () => { showModal.value = false; newEvent.time = ''; newEvent.location = ''; newEvent.desc = ''; };
+                const closeModal = () => { 
+                    showModal.value = false; 
+                    newEvent.time = ''; newEvent.location = ''; newEvent.desc = ''; 
+                };
                 
-                const addEvent = () => {
+                const addEvent = async () => {
                     if (!newEvent.location) return;
                     itineraries.value[currentDay.value - 1].events.push({
-                        time: { zh: newEvent.time, en: newEvent.time },
+                        time: { zh: newEvent.time || '待定', en: newEvent.time || 'TBD' },
                         location: { zh: newEvent.location, en: newEvent.location },
-                        desc: { zh: newEvent.desc, en: newEvent.desc }
+                        desc: { zh: newEvent.desc || '', en: newEvent.desc || '' }
                     });
-                    saveToCloud();
+                    await saveToCloud();
                     closeModal();
                 };
 
-                const removeEvent = (index) => {
+                const removeEvent = async (index) => {
                     itineraries.value[currentDay.value - 1].events.splice(index, 1);
-                    saveToCloud();
+                    await saveToCloud();
                 };
 
-                // 3D 櫻花瓣
                 const createPetals = () => {
                     const box = document.getElementById('sakura-box');
-                    for (let i = 0; i < 30; i++) {
+                    if (!box) return;
+                    box.innerHTML = '';
+                    // 增加到 40 片更有氛圍
+                    for (let i = 0; i < 40; i++) {
                         const petal = document.createElement('div');
                         petal.className = 'petal';
-                        const size = Math.random() * 12 + 6 + 'px';
+                        const size = Math.random() * 8 + 8 + 'px'; // 稍微大一點點
                         petal.style.width = size;
                         petal.style.height = size;
                         petal.style.left = Math.random() * 100 + 'vw';
-                        petal.style.animationDuration = Math.random() * 10 + 7 + 's';
-                        petal.style.animationDelay = Math.random() * 8 + 's';
+                        petal.style.animationDuration = Math.random() * 8 + 6 + 's';
+                        petal.style.animationDelay = Math.random() * 10 + 's';
+                        // 隨機初始旋轉
+                        petal.style.transform = `rotate(${Math.random() * 360}deg)`;
                         box.appendChild(petal);
                     }
                 };
@@ -325,10 +356,5 @@
             }
         }).mount('#app');
     </script>
-
-    <style>
-        .fade-enter-active, .fade-leave-active { transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
-        .fade-enter-from, .fade-leave-to { opacity: 0; }
-    </style>
 </body>
 </html>
