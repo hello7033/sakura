@@ -155,7 +155,10 @@
 
         createApp({
             setup() {
+                // 安全地取得環境變數，避免未定義錯誤
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'shared-tokyo-2026';
+                const hasFirebaseConfig = typeof __firebase_config !== 'undefined';
+                
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(true);
@@ -171,7 +174,6 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 核心同步路徑修正：使用 public/data 標準路徑
                 const getSharedDoc = () => {
                     return firebase.firestore()
                         .collection('artifacts')
@@ -183,6 +185,7 @@
                 };
 
                 const save = async () => {
+                    if (!hasFirebaseConfig) return;
                     loading.value = true;
                     try {
                         const data = JSON.parse(JSON.stringify({
@@ -216,43 +219,42 @@
                     });
                     showModal.value = false;
                     Object.assign(form, { time: '', location: '', desc: '' });
-                    await save();
+                    if (hasFirebaseConfig) await save();
                 };
 
                 const removeEvent = async (idx) => {
                     itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                    await save();
+                    if (hasFirebaseConfig) await save();
                 };
 
                 onMounted(async () => {
+                    if (!hasFirebaseConfig) {
+                        syncStatus.value = 'Local Mode';
+                        loading.value = false;
+                        document.getElementById('app-loader').style.display = 'none';
+                        return;
+                    }
+
                     try {
-                        // 1. 初始化 Firebase
                         if (!firebase.apps.length) {
-                            const config = JSON.parse(__firebase_config);
-                            firebase.initializeApp(config);
+                            firebase.initializeApp(JSON.parse(__firebase_config));
                         }
                         
-                        // 2. 身份驗證 (必須在所有 Firestore 操作之前)
                         const auth = firebase.auth();
-                        const initAuth = async () => {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                return await auth.signInWithCustomToken(__initial_auth_token);
-                            } else {
-                                return await auth.signInAnonymously();
-                            }
-                        };
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
                         
-                        await initAuth();
                         syncStatus.value = 'Connected';
 
-                        // 3. 設定實時同步監聽
-                        const unsubscribe = getSharedDoc().onSnapshot((doc) => {
+                        getSharedDoc().onSnapshot((doc) => {
                             if (doc.exists) {
                                 const data = doc.data();
                                 itineraries.value = data.itineraries || itineraries.value;
                                 if(data.currency) Object.assign(currency, data.currency);
                             } else {
-                                // 首次初始化
                                 save();
                             }
                             loading.value = false;
@@ -267,11 +269,10 @@
                     } catch (e) {
                         console.error("Init Error:", e);
                         syncStatus.value = 'Offline';
-                        const loader = document.getElementById('app-loader');
-                        if (loader) loader.innerHTML = `<div class="p-6 text-center text-xs text-red-400 font-bold uppercase">Cloud Error: ${e.message}</div>`;
+                        loading.value = false;
+                        document.getElementById('app-loader').style.display = 'none';
                     }
 
-                    // 櫻花特效
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
