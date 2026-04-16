@@ -78,7 +78,7 @@
                     <i class="fa-solid fa-globe mr-1"></i> Mode: 
                     <span class="text-pink-400">Public Shared Sync</span>
                 </div>
-                <div class="text-[8px] text-slate-300">Sync: Active</div>
+                <div class="text-[8px] text-slate-300">Sync: {{ syncStatus }}</div>
             </section>
 
             <!-- 匯率計算機 -->
@@ -155,11 +155,11 @@
 
         createApp({
             setup() {
-                // 獲取環境參數
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'shared-tokyo-2026';
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(true);
+                const syncStatus = ref('Initializing...');
                 const showModal = ref(false);
                 const currency = reactive({ jpy: 10000, twd: 2100, aud: 100.50 });
                 const form = reactive({ time: '', location: '', desc: '' });
@@ -171,7 +171,7 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 強制鎖定公共共享路徑 (符合 Firebase 權限規則)
+                // 核心同步路徑修正：使用 public/data 標準路徑
                 const getSharedDoc = () => {
                     return firebase.firestore()
                         .collection('artifacts')
@@ -191,8 +191,10 @@
                             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                         }));
                         await getSharedDoc().set(data);
+                        syncStatus.value = 'Active';
                     } catch (e) {
-                        console.error("Sync Save Error:", e);
+                        console.error("Save Error:", e);
+                        syncStatus.value = 'Error';
                     } finally {
                         setTimeout(() => loading.value = false, 500);
                     }
@@ -226,42 +228,50 @@
                     try {
                         // 1. 初始化 Firebase
                         if (!firebase.apps.length) {
-                            firebase.initializeApp(JSON.parse(__firebase_config));
+                            const config = JSON.parse(__firebase_config);
+                            firebase.initializeApp(config);
                         }
                         
-                        // 2. 強制進行身份驗證 (Firestore 運作前提)
+                        // 2. 身份驗證 (必須在所有 Firestore 操作之前)
                         const auth = firebase.auth();
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
+                        const initAuth = async () => {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                return await auth.signInWithCustomToken(__initial_auth_token);
+                            } else {
+                                return await auth.signInAnonymously();
+                            }
+                        };
+                        
+                        await initAuth();
+                        syncStatus.value = 'Connected';
 
                         // 3. 設定實時同步監聽
-                        getSharedDoc().onSnapshot((doc) => {
+                        const unsubscribe = getSharedDoc().onSnapshot((doc) => {
                             if (doc.exists) {
                                 const data = doc.data();
-                                // 只在資料不同時更新，避免輸入框跳動
                                 itineraries.value = data.itineraries || itineraries.value;
                                 if(data.currency) Object.assign(currency, data.currency);
                             } else {
-                                // 若無資料則進行首次初始化
+                                // 首次初始化
                                 save();
                             }
                             loading.value = false;
+                            syncStatus.value = 'Active';
                             const loader = document.getElementById('app-loader');
                             if (loader) loader.style.display = 'none';
                         }, (err) => {
-                            console.error("Snapshot Error:", err);
+                            console.error("Sync Error:", err);
+                            syncStatus.value = 'Permission Denied';
                         });
 
                     } catch (e) {
-                        console.error("Cloud Connection Failed:", e);
+                        console.error("Init Error:", e);
+                        syncStatus.value = 'Offline';
                         const loader = document.getElementById('app-loader');
-                        if (loader) loader.innerHTML = `<div class="p-6 text-center text-xs text-red-400 font-bold uppercase">Sync Failed: ${e.message}</div>`;
+                        if (loader) loader.innerHTML = `<div class="p-6 text-center text-xs text-red-400 font-bold uppercase">Cloud Error: ${e.message}</div>`;
                     }
 
-                    // 櫻花裝飾
+                    // 櫻花特效
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
@@ -271,7 +281,7 @@
                     }
                 });
 
-                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert };
+                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert, syncStatus };
             }
         }).mount('#app');
     </script>
