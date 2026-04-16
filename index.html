@@ -3,149 +3,311 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本東京 5D4N - 雲端同步版</title>
+    <title>日本東京 5D4N - 穩定同步版</title>
+    <!-- 引入全域 UMD 腳本：Firebase 11 -->
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
+    <!-- 引入全域 UMD 腳本：Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Tailwind & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
-        
-        /* 避免 Vue 掛載前的閃爍 */
         [v-cloak] { display: none !important; }
-        
-        #app-loading {
-            position: fixed;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff5f6;
-            z-index: 9999;
-        }
-
         body { 
             font-family: 'Noto Sans TC', sans-serif; 
-            background: linear-gradient(180deg, #fff5f6 0%, #ffffff 100%);
-            background-attachment: fixed;
-            min-height: 100vh;
+            background: #fff5f6; 
             color: #5c5c5c;
-            overflow-x: hidden;
+            min-height: 100vh;
         }
-
         .glass-panel {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
         }
-
-        .sakura-header { 
-            background: linear-gradient(135deg, rgba(255, 241, 242, 0.9) 0%, rgba(255, 255, 255, 0.6) 100%); 
-        }
-
-        @keyframes sakura-fall {
-            0% { transform: translate(0, -10%) rotateX(0deg) rotateY(0deg); opacity: 0; }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.8; }
-            100% { transform: translate(200px, 110vh) rotateX(720deg) rotateY(360deg); opacity: 0; }
-        }
-
-        .sakura-container {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 0;
-            overflow: hidden;
-            perspective: 1200px;
-        }
-
-        .petal {
-            position: absolute;
-            background: linear-gradient(135deg, #ffd1dc 0%, #fff 100%);
-            border-radius: 100% 0 100% 0;
-            opacity: 0;
-            animation: sakura-fall linear infinite;
-            transform-style: preserve-3d;
-            box-shadow: 0 2px 5px rgba(255, 182, 193, 0.2);
-        }
-
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .sakura-header { background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%); }
         .text-soft-pink { color: #f2bac5; }
         .bg-soft-pink { background-color: #f2bac5; }
-
-        .loading-dot { animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         
-        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
-        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        /* 櫻花背景動畫 */
+        @keyframes fall {
+            0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+        }
+        .petal {
+            position: fixed;
+            background: #ffd1dc;
+            border-radius: 100% 0 100% 0;
+            pointer-events: none;
+            z-index: 0;
+            animation: fall linear infinite;
+        }
+        
+        #boot-loader {
+            position: fixed;
+            inset: 0;
+            background: #fff5f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
     </style>
 </head>
 <body class="pb-12">
-    <!-- 預載入畫面 -->
-    <div id="app-loading">
-        <div class="text-center space-y-4">
-            <div class="text-3xl animate-bounce">🌸</div>
-            <div class="text-[10px] tracking-[0.3em] text-soft-pink font-bold">LOADING SYSTEM...</div>
-        </div>
+    <!-- 啟動強制顯示層 -->
+    <div id="boot-loader">
+        <div class="text-4xl animate-bounce mb-4">🌸</div>
+        <div id="boot-text" class="text-[10px] tracking-[0.3em] text-soft-pink font-bold">SYSTEM INITIALIZING...</div>
     </div>
 
-    <!-- 櫻花背景 -->
-    <div class="sakura-container" id="sakura-box"></div>
+    <!-- 櫻花容器 -->
+    <div id="sakura-bg"></div>
 
-    <div id="app" v-cloak class="max-w-md mx-auto min-h-screen relative z-10">
-        <!-- 雲端狀態提示 -->
-        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-white/90 backdrop-blur px-4 py-1.5 rounded-full shadow-md border border-pink-50 text-[10px] text-soft-pink font-bold tracking-widest flex items-center gap-2">
-            <span class="w-1.5 h-1.5 bg-soft-pink rounded-full loading-dot"></span>
-            CLOUD SYNCING...
+    <div id="app" v-cloak class="max-w-md mx-auto relative z-10">
+        <!-- 同步狀態條 -->
+        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 px-4 py-1.5 rounded-full shadow-sm text-[9px] text-soft-pink font-bold tracking-widest border border-pink-50 flex items-center gap-2">
+            <i class="fa-solid fa-circle-notch animate-spin"></i> CLOUD SYNCING
         </div>
 
-        <header class="sakura-header p-10 text-slate-500 rounded-b-[4rem] relative overflow-hidden shadow-sm">
-            <button @click="toggleLang" class="absolute top-8 right-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-0.5 z-20">
-                {{ lang === 'zh' ? 'English' : '中文' }}
-            </button>
+        <header class="sakura-header p-10 rounded-b-[3rem] shadow-sm relative overflow-hidden">
+            <div class="flex justify-between items-start relative z-10">
+                <div class="space-y-2">
+                    <p class="text-[10px] tracking-[0.4em] font-bold text-soft-pink uppercase">Tokyo Journey</p>
+                    <h1 class="text-3xl font-light text-slate-700">Spring <span class="italic font-serif">2026</span></h1>
+                </div>
+                <button @click="toggleLang" class="text-[10px] font-bold text-slate-400 border-b border-slate-200 pb-0.5 uppercase tracking-widest">
+                    {{ lang === 'zh' ? 'English' : '中文' }}
+                </button>
+            </div>
             
-            <div class="space-y-3 relative z-10">
-                <p class="text-[10px] tracking-[0.4em] font-bold text-soft-pink uppercase">Tokyo Journey</p>
-                <h1 class="text-3xl font-light tracking-tight text-slate-700">Spring <span class="italic font-serif">2026</span></h1>
-                
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-2 text-[10px] font-medium text-slate-400 tracking-wider">
-                        <i class="fa-solid fa-calendar-days text-[9px]"></i>
-                        <span>APRIL 02 — APRIL 06</span>
-                    </div>
-                    <div class="flex items-center gap-2 text-[10px] font-bold text-white bg-soft-pink/80 px-3 py-1 rounded-full shadow-sm">
-                        <i class="fa-solid fa-cloud-sun"></i>
-                        <span>TOKYO 18°C</span>
-                    </div>
+            <div class="mt-6 flex items-center gap-4 relative z-10">
+                <div class="text-[10px] text-slate-400 font-medium">
+                    <i class="fa-solid fa-calendar-days mr-1"></i> APRIL 02 — 06
+                </div>
+                <div class="bg-soft-pink text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-sm">
+                    TOKYO 18°C
                 </div>
             </div>
         </header>
 
-        <div class="mx-6 -mt-8 space-y-4 relative z-20">
-            <!-- 狀態卡片 -->
-            <section class="glass-panel rounded-[2.5rem] shadow-lg p-6 space-y-5">
+        <main class="px-6 -mt-6 space-y-6">
+            <!-- 工具卡片 -->
+            <section class="glass-panel p-6 rounded-[2rem] shadow-lg space-y-6">
                 <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-sm border border-pink-50">🌸</div>
-                        <div>
-                            <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cloud Storage</div>
-                            <div class="text-xs font-semibold text-slate-600">{{ user ? (lang === 'zh' ? '已連線' : 'Connected') : 'Connecting...' }}</div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-lg shadow-sm">📡</div>
+                        <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+                            Status: <span class="text-slate-600 ml-1">{{ user ? 'Online' : 'Offline' }}</span>
                         </div>
                     </div>
-                    <div class="text-right">
-                        <div class="text-[9px] text-slate-300 uppercase font-bold tracking-tighter">User ID</div>
-                        <div class="text-[8px] text-slate-400 font-mono bg-white px-2 py-1 rounded-md border border-slate-50">{{ user?.uid ? user.uid.substring(0,8) : '...' }}</div>
+                    <div class="text-[8px] font-mono text-slate-300 bg-slate-50 px-2 py-1 rounded">
+                        UID: {{ user?.uid ? user.uid.substring(0,8) : '----' }}
                     </div>
                 </div>
 
-                <!-- 匯率轉換 -->
-                <div class="pt-5 border-t border-slate-100">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-comments-dollar text-soft-pink"></i> {{ lang === 'zh' ? '匯率換算器' : 'Converter' }}
-                    </div>
+                <!-- 匯率 -->
+                <div class="pt-4 border-t border-slate-50">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Currency Converter</div>
                     <div class="grid grid-cols-3 gap-3">
-                        <div class="space-y-1.5">
-                            <label class="text-[9px] font-bold text-slate-400 block ml-1 uppercase">Jpy</label>
-                            <input type="number" v-model="currency.jpy" @input="convert('jpy')" class="w-full bg-white/80 border border-slate-100 rounded-xl py-2.5 px-3 text-sm font-medium text-slate-600 focus:outline-none">
+                        <div v-for="key in ['jpy', 'twd', 'aud']" :key="key" class="space-y-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">{{ key }}</label>
+                            <input type="number" v-model="currency[key]" @input="convert(key)" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-medium focus:ring-1 focus:ring-pink-100 outline-none">
                         </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[9px] font-bold text-slate-4
+                    </div>
+                </div>
+            </section>
+
+            <!-- 天數切換 -->
+            <nav class="flex justify-between items-center px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full">
+                <button v-for="d in 5" :key="d" @click="currentDay = d"
+                    :class="['w-10 h-10 rounded-full text-[11px] transition-all flex items-center justify-center', 
+                             currentDay === d ? 'bg-soft-pink text-white font-bold shadow-md' : 'text-slate-300']">
+                    {{ d }}
+                </button>
+            </nav>
+
+            <!-- 行程清單 -->
+            <div class="space-y-4">
+                <div v-if="itineraries[currentDay-1]" class="text-center py-4">
+                    <h2 class="text-sm font-bold text-slate-500 tracking-widest uppercase">{{ itineraries[currentDay-1].title[lang] }}</h2>
+                </div>
+
+                <div v-for="(event, idx) in itineraries[currentDay-1].events" :key="idx" class="flex gap-4 group">
+                    <div class="w-10 text-[9px] font-bold text-slate-300 pt-4 uppercase text-right">{{ event.time[lang] }}</div>
+                    <div class="flex-1 glass-panel p-5 rounded-[1.5rem] relative group-hover:shadow-md transition-shadow">
+                        <button @click="removeEvent(idx)" class="absolute top-4 right-4 text-slate-200 hover:text-red-300 opacity-0 group-hover:opacity-100">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                        <h3 class="text-sm font-medium text-slate-600 mb-1">{{ event.location[lang] }}</h3>
+                        <p class="text-[10px] text-slate-400 leading-relaxed">{{ event.desc[lang] }}</p>
+                    </div>
+                </div>
+
+                <!-- 新增按鈕 -->
+                <button @click="showModal = true" class="w-full ml-14 w-[calc(100%-56px)] py-4 border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-300 text-[10px] font-bold tracking-[0.2em] uppercase hover:text-soft-pink hover:border-soft-pink transition-all">
+                    + Add New Event
+                </button>
+            </div>
+        </main>
+
+        <!-- 新增彈窗 -->
+        <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <div class="absolute inset-0 bg-slate-900/10 backdrop-blur-sm" @click="showModal = false"></div>
+            <div class="relative bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl space-y-5">
+                <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">New Entry</h4>
+                <div class="space-y-3">
+                    <input v-model="form.time" placeholder="Time (e.g. 10:00)" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none">
+                    <input v-model="form.location" placeholder="Location" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none">
+                    <textarea v-model="form.desc" placeholder="Notes" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none resize-none"></textarea>
+                </div>
+                <button @click="addEvent" :disabled="!form.location" class="w-full py-3 bg-slate-800 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest disabled:opacity-30">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 初始化 Firebase (Compat Mode)
+        let app, auth, db;
+        try {
+            const config = JSON.parse(__firebase_config);
+            firebase.initializeApp(config);
+            auth = firebase.auth();
+            db = firebase.firestore();
+            document.getElementById('boot-text').innerText = "VUE INITIALIZING...";
+        } catch (e) {
+            document.getElementById('boot-text').innerText = "CONFIG ERROR";
+            console.error(e);
+        }
+
+        // 2. 初始化 Vue 應用程序
+        const { createApp, ref, reactive, onMounted, toRaw } = Vue;
+
+        createApp({
+            setup() {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-stable-v1';
+                const currentDay = ref(1);
+                const lang = ref('zh');
+                const loading = ref(true);
+                const user = ref(null);
+                const showModal = ref(false);
+                const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
+                const form = reactive({ time: '', location: '', desc: '' });
+
+                const itineraries = ref([
+                    { title: { zh: '第一天：抵達與漫步', en: 'Day 1: Arrival' }, events: [] },
+                    { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: [] },
+                    { title: { zh: '第三天：奇幻迪士尼', en: 'Day 3: Disney Magic' }, events: [] },
+                    { title: { zh: '第四天：潮流原宿', en: 'Day 4: Harajuku Vibe' }, events: [] },
+                    { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
+                ]);
+
+                const getDocRef = () => db.collection('artifacts').doc(appId).collection('users').doc(user.value.uid).collection('data').doc('itinerary');
+
+                const save = async () => {
+                    if (!user.value) return;
+                    loading.value = true;
+                    try {
+                        await getDocRef().set({
+                            itineraries: toRaw(itineraries.value),
+                            currency: toRaw(currency),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } catch (e) { console.error("Save Error", e); }
+                    finally { loading.value = false; }
+                };
+
+                const convert = (src) => {
+                    const JPY_TWD = 0.211, AUD_TWD = 20.85;
+                    if (src === 'jpy') {
+                        currency.twd = Math.round(currency.jpy * JPY_TWD);
+                        currency.aud = (currency.twd / AUD_TWD).toFixed(2);
+                    } else if (src === 'twd') {
+                        currency.jpy = Math.round(currency.twd / JPY_TWD);
+                        currency.aud = (currency.twd / AUD_TWD).toFixed(2);
+                    } else if (src === 'aud') {
+                        currency.twd = Math.round(currency.aud * AUD_TWD);
+                        currency.jpy = Math.round(currency.twd / JPY_TWD);
+                    }
+                    save();
+                };
+
+                const addEvent = () => {
+                    const dayIdx = currentDay.value - 1;
+                    itineraries.value[dayIdx].events.push({
+                        time: { zh: form.time || '待定', en: form.time || 'TBD' },
+                        location: { zh: form.location, en: form.location },
+                        desc: { zh: form.desc || '-', en: form.desc || '-' }
+                    });
+                    save();
+                    showModal.value = false;
+                    form.time = ''; form.location = ''; form.desc = '';
+                };
+
+                const removeEvent = (idx) => {
+                    itineraries.value[currentDay.value - 1].events.splice(idx, 1);
+                    save();
+                };
+
+                const startSakura = () => {
+                    const container = document.getElementById('sakura-bg');
+                    for(let i=0; i<25; i++) {
+                        const p = document.createElement('div');
+                        p.className = 'petal';
+                        const size = Math.random() * 8 + 8 + 'px';
+                        p.style.width = size; p.style.height = size;
+                        p.style.left = Math.random() * 100 + 'vw';
+                        p.style.animationDuration = Math.random() * 5 + 5 + 's';
+                        p.style.animationDelay = Math.random() * 5 + 's';
+                        container.appendChild(p);
+                    }
+                };
+
+                onMounted(async () => {
+                    startSakura();
+                    try {
+                        // 執行登入
+                        const cred = await auth.signInAnonymously();
+                        user.value = cred.user;
+
+                        // 監聽數據
+                        getDocRef().onSnapshot(doc => {
+                            if (doc.exists) {
+                                const data = doc.data();
+                                itineraries.value = data.itineraries;
+                                Object.assign(currency, data.currency);
+                            } else {
+                                save();
+                            }
+                            loading.value = false;
+                            // 關閉 Loader
+                            const loader = document.getElementById('boot-loader');
+                            if(loader) loader.style.display = 'none';
+                        }, err => {
+                            console.error("Firestore Error", err);
+                            loading.value = false;
+                        });
+                    } catch (e) {
+                        console.error("Auth/Start Error", e);
+                        document.getElementById('boot-text').innerText = "READY (LOCAL)";
+                        setTimeout(() => {
+                            document.getElementById('boot-loader').style.display = 'none';
+                        }, 1000);
+                    }
+                });
+
+                return { 
+                    currentDay, lang, loading, user, itineraries, currency, 
+                    showModal, form, convert, addEvent, removeEvent,
+                    toggleLang: () => lang.value = lang.value === 'zh' ? 'en' : 'zh'
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
