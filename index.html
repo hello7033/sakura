@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>日本東京 5D4N - 穩定同步版</title>
-    <!-- 引入全域 UMD 腳本：Firebase 11 -->
+    <!-- 引入全域 UMD 腳本：Firebase 11 (Compat Mode) -->
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
@@ -172,142 +172,177 @@
     </div>
 
     <script>
-        // 1. 初始化 Firebase (Compat Mode)
-        let app, auth, db;
-        try {
-            const config = JSON.parse(__firebase_config);
-            firebase.initializeApp(config);
-            auth = firebase.auth();
-            db = firebase.firestore();
-            document.getElementById('boot-text').innerText = "VUE INITIALIZING...";
-        } catch (e) {
-            document.getElementById('boot-text').innerText = "CONFIG ERROR";
-            console.error(e);
+        // 初始化狀態追蹤
+        let auth, db;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-stable-v1';
+
+        // 啟動主函式
+        async function startApp() {
+            const bootText = document.getElementById('boot-text');
+            
+            try {
+                // 1. 安全檢查 Firebase 腳本是否載入
+                if (typeof firebase === 'undefined') {
+                    throw new Error("Firebase 腳本未就緒");
+                }
+
+                // 2. 初始化 Firebase
+                if (!firebase.apps.length) {
+                    const config = JSON.parse(__firebase_config || '{}');
+                    firebase.initializeApp(config);
+                }
+                
+                auth = firebase.auth();
+                db = firebase.firestore();
+                bootText.innerText = "VUE INITIALIZING...";
+
+                // 3. 啟動 Vue
+                initVue();
+
+            } catch (e) {
+                console.error("啟動失敗:", e);
+                bootText.innerText = "LAUNCHING LOCAL MODE...";
+                // 即使失敗也嘗試啟動 Vue (本地模式)
+                setTimeout(initVue, 1000);
+            }
         }
 
-        // 2. 初始化 Vue 應用程序
-        const { createApp, ref, reactive, onMounted, toRaw } = Vue;
+        function initVue() {
+            const { createApp, ref, reactive, onMounted, toRaw } = Vue;
 
-        createApp({
-            setup() {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-stable-v1';
-                const currentDay = ref(1);
-                const lang = ref('zh');
-                const loading = ref(true);
-                const user = ref(null);
-                const showModal = ref(false);
-                const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
-                const form = reactive({ time: '', location: '', desc: '' });
+            createApp({
+                setup() {
+                    const currentDay = ref(1);
+                    const lang = ref('zh');
+                    const loading = ref(true);
+                    const user = ref(null);
+                    const showModal = ref(false);
+                    const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
+                    const form = reactive({ time: '', location: '', desc: '' });
 
-                const itineraries = ref([
-                    { title: { zh: '第一天：抵達與漫步', en: 'Day 1: Arrival' }, events: [] },
-                    { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: [] },
-                    { title: { zh: '第三天：奇幻迪士尼', en: 'Day 3: Disney Magic' }, events: [] },
-                    { title: { zh: '第四天：潮流原宿', en: 'Day 4: Harajuku Vibe' }, events: [] },
-                    { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
-                ]);
+                    const itineraries = ref([
+                        { title: { zh: '第一天：抵達與漫步', en: 'Day 1: Arrival' }, events: [] },
+                        { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: [] },
+                        { title: { zh: '第三天：奇幻迪士尼', en: 'Day 3: Disney Magic' }, events: [] },
+                        { title: { zh: '第四天：潮流原宿', en: 'Day 4: Harajuku Vibe' }, events: [] },
+                        { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
+                    ]);
 
-                const getDocRef = () => db.collection('artifacts').doc(appId).collection('users').doc(user.value.uid).collection('data').doc('itinerary');
+                    const getDocRef = () => {
+                        if (!user.value) return null;
+                        return db.collection('artifacts').doc(appId).collection('users').doc(user.value.uid).collection('data').doc('itinerary');
+                    };
 
-                const save = async () => {
-                    if (!user.value) return;
-                    loading.value = true;
-                    try {
-                        await getDocRef().set({
-                            itineraries: toRaw(itineraries.value),
-                            currency: toRaw(currency),
-                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    const save = async () => {
+                        const docRef = getDocRef();
+                        if (!docRef) return;
+                        loading.value = true;
+                        try {
+                            await docRef.set({
+                                itineraries: toRaw(itineraries.value),
+                                currency: toRaw(currency),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } catch (e) { console.error("儲存失敗:", e); }
+                        finally { loading.value = false; }
+                    };
+
+                    const convert = (src) => {
+                        const JPY_TWD = 0.211, AUD_TWD = 20.85;
+                        if (src === 'jpy') {
+                            currency.twd = Math.round(currency.jpy * JPY_TWD);
+                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
+                        } else if (src === 'twd') {
+                            currency.jpy = Math.round(currency.twd / JPY_TWD);
+                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
+                        } else if (src === 'aud') {
+                            currency.twd = Math.round(currency.aud * AUD_TWD);
+                            currency.jpy = Math.round(currency.twd / JPY_TWD);
+                        }
+                        save();
+                    };
+
+                    const addEvent = () => {
+                        const dayIdx = currentDay.value - 1;
+                        itineraries.value[dayIdx].events.push({
+                            time: { zh: form.time || '待定', en: form.time || 'TBD' },
+                            location: { zh: form.location, en: form.location },
+                            desc: { zh: form.desc || '-', en: form.desc || '-' }
                         });
-                    } catch (e) { console.error("Save Error", e); }
-                    finally { loading.value = false; }
-                };
+                        save();
+                        showModal.value = false;
+                        form.time = ''; form.location = ''; form.desc = '';
+                    };
 
-                const convert = (src) => {
-                    const JPY_TWD = 0.211, AUD_TWD = 20.85;
-                    if (src === 'jpy') {
-                        currency.twd = Math.round(currency.jpy * JPY_TWD);
-                        currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                    } else if (src === 'twd') {
-                        currency.jpy = Math.round(currency.twd / JPY_TWD);
-                        currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                    } else if (src === 'aud') {
-                        currency.twd = Math.round(currency.aud * AUD_TWD);
-                        currency.jpy = Math.round(currency.twd / JPY_TWD);
-                    }
-                    save();
-                };
+                    const removeEvent = (idx) => {
+                        itineraries.value[currentDay.value - 1].events.splice(idx, 1);
+                        save();
+                    };
 
-                const addEvent = () => {
-                    const dayIdx = currentDay.value - 1;
-                    itineraries.value[dayIdx].events.push({
-                        time: { zh: form.time || '待定', en: form.time || 'TBD' },
-                        location: { zh: form.location, en: form.location },
-                        desc: { zh: form.desc || '-', en: form.desc || '-' }
+                    const startSakura = () => {
+                        const container = document.getElementById('sakura-bg');
+                        if (!container) return;
+                        for(let i=0; i<25; i++) {
+                            const p = document.createElement('div');
+                            p.className = 'petal';
+                            const size = Math.random() * 8 + 8 + 'px';
+                            p.style.width = size; p.style.height = size;
+                            p.style.left = Math.random() * 100 + 'vw';
+                            p.style.animationDuration = Math.random() * 5 + 5 + 's';
+                            p.style.animationDelay = Math.random() * 5 + 's';
+                            container.appendChild(p);
+                        }
+                    };
+
+                    onMounted(async () => {
+                        startSakura();
+                        try {
+                            if (!auth) throw new Error("Firebase Auth 未初始化");
+
+                            // 執行登入
+                            const cred = await auth.signInAnonymously();
+                            user.value = cred.user;
+
+                            // 監聽數據
+                            const docRef = getDocRef();
+                            docRef.onSnapshot(doc => {
+                                if (doc.exists) {
+                                    const data = doc.data();
+                                    if (data.itineraries) itineraries.value = data.itineraries;
+                                    if (data.currency) Object.assign(currency, data.currency);
+                                } else {
+                                    save();
+                                }
+                                loading.value = false;
+                                hideLoader();
+                            }, err => {
+                                console.error("Firestore 監聽失敗:", err);
+                                loading.value = false;
+                                hideLoader();
+                            });
+                        } catch (e) {
+                            console.error("Auth 流程失敗:", e);
+                            loading.value = false;
+                            hideLoader();
+                        }
                     });
-                    save();
-                    showModal.value = false;
-                    form.time = ''; form.location = ''; form.desc = '';
-                };
 
-                const removeEvent = (idx) => {
-                    itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                    save();
-                };
-
-                const startSakura = () => {
-                    const container = document.getElementById('sakura-bg');
-                    for(let i=0; i<25; i++) {
-                        const p = document.createElement('div');
-                        p.className = 'petal';
-                        const size = Math.random() * 8 + 8 + 'px';
-                        p.style.width = size; p.style.height = size;
-                        p.style.left = Math.random() * 100 + 'vw';
-                        p.style.animationDuration = Math.random() * 5 + 5 + 's';
-                        p.style.animationDelay = Math.random() * 5 + 's';
-                        container.appendChild(p);
+                    function hideLoader() {
+                        const loader = document.getElementById('boot-loader');
+                        if(loader) loader.style.display = 'none';
                     }
-                };
 
-                onMounted(async () => {
-                    startSakura();
-                    try {
-                        // 執行登入
-                        const cred = await auth.signInAnonymously();
-                        user.value = cred.user;
+                    return { 
+                        currentDay, lang, loading, user, itineraries, currency, 
+                        showModal, form, convert, addEvent, removeEvent,
+                        toggleLang: () => lang.value = lang.value === 'zh' ? 'en' : 'zh'
+                    };
+                }
+            }).mount('#app');
+        }
 
-                        // 監聽數據
-                        getDocRef().onSnapshot(doc => {
-                            if (doc.exists) {
-                                const data = doc.data();
-                                itineraries.value = data.itineraries;
-                                Object.assign(currency, data.currency);
-                            } else {
-                                save();
-                            }
-                            loading.value = false;
-                            // 關閉 Loader
-                            const loader = document.getElementById('boot-loader');
-                            if(loader) loader.style.display = 'none';
-                        }, err => {
-                            console.error("Firestore Error", err);
-                            loading.value = false;
-                        });
-                    } catch (e) {
-                        console.error("Auth/Start Error", e);
-                        document.getElementById('boot-text').innerText = "READY (LOCAL)";
-                        setTimeout(() => {
-                            document.getElementById('boot-loader').style.display = 'none';
-                        }, 1000);
-                    }
-                });
-
-                return { 
-                    currentDay, lang, loading, user, itineraries, currency, 
-                    showModal, form, convert, addEvent, removeEvent,
-                    toggleLang: () => lang.value = lang.value === 'zh' ? 'en' : 'zh'
-                };
-            }
-        }).mount('#app');
+        // 確保視窗載入後啟動
+        window.addEventListener('load', startApp);
     </script>
 </body>
 </html>
