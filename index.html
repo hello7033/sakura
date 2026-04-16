@@ -174,7 +174,7 @@
     <script>
         // 初始化全域變數
         let auth, db;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-stable-v1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-travel-final';
 
         async function startApp() {
             const bootText = document.getElementById('boot-text');
@@ -189,7 +189,8 @@
                 auth = firebase.auth();
                 db = firebase.firestore();
                 
-                // 強制執行登入
+                // 1. 強制執行登入並等待結果
+                bootText.innerText = "AUTHENTICATING...";
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await auth.signInWithCustomToken(__initial_auth_token);
                 } else {
@@ -200,8 +201,7 @@
                 initVue();
             } catch (e) {
                 console.error("啟動失敗:", e);
-                bootText.innerText = "ERROR BUT TRYING...";
-                setTimeout(initVue, 1000);
+                bootText.innerText = "SYSTEM ERROR";
             }
         }
 
@@ -226,28 +226,28 @@
                         { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
                     ]);
 
-                    // 取得同步路徑 (嚴格遵循 Canvas 規範)
-                    const getDocRef = (uid) => {
-                        const targetUid = uid || auth.currentUser?.uid;
-                        if (!targetUid) return null;
-                        return db.collection('artifacts').doc(appId).collection('users').doc(targetUid).collection('data').doc('itinerary');
+                    // 取得同步路徑
+                    const getDocRef = () => {
+                        const uid = auth.currentUser?.uid;
+                        if (!uid) return null;
+                        return db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('itinerary');
                     };
 
-                    // 非同步儲存函式
+                    // 強化的同步儲存函式
                     const save = async () => {
                         const docRef = getDocRef();
-                        if (!docRef) {
-                            console.warn("無法儲存：無用戶身份");
-                            return;
-                        }
+                        if (!docRef) return;
                         
                         loading.value = true;
                         try {
-                            await docRef.set({
-                                itineraries: toRaw(itineraries.value),
-                                currency: toRaw(currency),
-                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                            });
+                            // 使用 JSON 序列化確保 Proxy 物件被轉換為普通物件
+                            const cleanData = JSON.parse(JSON.stringify({
+                                itineraries: itineraries.value,
+                                currency: currency,
+                                updatedAt: Date.now()
+                            }));
+                            
+                            await docRef.set(cleanData);
                         } catch (e) {
                             console.error("雲端存儲失敗:", e);
                         } finally {
@@ -279,12 +279,12 @@
                         });
                         showModal.value = false;
                         form.time = ''; form.location = ''; form.desc = '';
-                        await save(); // 確保新增後立即同步
+                        await save();
                     };
 
                     const removeEvent = async (idx) => {
                         itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                        await save(); // 確保刪除後立即同步
+                        await save();
                     };
 
                     const startSakura = () => {
@@ -305,24 +305,25 @@
                     onMounted(async () => {
                         startSakura();
                         
-                        // 監聽登入狀態變動
+                        // 2. 監聽登入並立即加載資料
                         auth.onAuthStateChanged((currentUser) => {
                             if (currentUser) {
                                 user.value = currentUser;
-                                const docRef = getDocRef(currentUser.uid);
+                                const docRef = getDocRef();
                                 
-                                // 啟動實時監聽
+                                // 開啟實時監聽
                                 docRef.onSnapshot((doc) => {
                                     if (doc.exists) {
                                         const data = doc.data();
                                         if (data.itineraries) itineraries.value = data.itineraries;
                                         if (data.currency) Object.assign(currency, data.currency);
                                     } else {
-                                        // 初次使用，建立結構
+                                        // 沒資料時嘗試初始化一次
                                         save();
                                     }
                                     loading.value = false;
-                                    document.getElementById('boot-loader').style.display = 'none';
+                                    const loader = document.getElementById('boot-loader');
+                                    if(loader) loader.style.display = 'none';
                                 }, (err) => {
                                     console.error("監聽失敗:", err);
                                     loading.value = false;
@@ -341,6 +342,7 @@
             }).mount('#app');
         }
 
+        // 啟動流程
         window.addEventListener('load', startApp);
     </script>
 </body>
