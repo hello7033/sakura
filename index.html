@@ -29,7 +29,7 @@
             background: linear-gradient(135deg, rgba(255, 241, 242, 0.9) 0%, rgba(255, 255, 255, 0.6) 100%); 
         }
 
-        /* 3D 櫻花動畫修正 */
+        /* 3D 櫻花動畫 */
         @keyframes sakura-fall {
             0% { transform: translate(0, -10%) rotateX(0deg) rotateY(0deg); opacity: 0; }
             10% { opacity: 0.8; }
@@ -41,7 +41,7 @@
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 0; /* 放在最底層背景 */
+            z-index: 0;
             overflow: hidden;
             perspective: 1200px;
         }
@@ -65,13 +65,15 @@
         
         .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
         .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
+        [v-cloak] { display: none; }
     </style>
 </head>
 <body class="pb-12">
-    <!-- 櫻花容器 -->
+    <!-- 櫻花背景 -->
     <div class="sakura-container" id="sakura-box"></div>
 
-    <div id="app" class="max-w-md mx-auto min-h-screen relative z-10">
+    <div id="app" v-cloak class="max-w-md mx-auto min-h-screen relative z-10">
         <!-- 雲端狀態提示 -->
         <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-white/90 backdrop-blur px-4 py-1.5 rounded-full shadow-md border border-pink-50 text-[10px] text-soft-pink font-bold tracking-widest flex items-center gap-2">
             <span class="w-1.5 h-1.5 bg-soft-pink rounded-full loading-dot"></span>
@@ -101,7 +103,7 @@
         </header>
 
         <div class="mx-6 -mt-8 space-y-4 relative z-20">
-            <!-- 雲端狀態與匯率計算機卡片 -->
+            <!-- 狀態卡片 -->
             <section class="glass-panel rounded-[2.5rem] shadow-lg p-6 space-y-5">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-4">
@@ -117,7 +119,7 @@
                     </div>
                 </div>
 
-                <!-- 匯率轉換區塊 -->
+                <!-- 匯率轉換 -->
                 <div class="pt-5 border-t border-slate-100">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                         <i class="fa-solid fa-comments-dollar text-soft-pink"></i> {{ lang === 'zh' ? '匯率換算器' : 'Converter' }}
@@ -140,7 +142,7 @@
             </section>
         </div>
 
-        <!-- 天數導覽 -->
+        <!-- 天數選單 -->
         <nav class="flex justify-center gap-6 px-4 mt-8 sticky top-0 py-4 z-30 bg-white/30 backdrop-blur-md">
             <button v-for="day in 5" :key="day" 
                 @click="currentDay = day"
@@ -151,6 +153,7 @@
             </button>
         </nav>
 
+        <!-- 行程內容 -->
         <main class="p-6 pt-2 min-h-[500px] relative z-20">
             <div class="mb-12 text-center">
                 <h2 class="text-xl font-light text-slate-600 tracking-widest uppercase">{{ itineraries[currentDay-1]?.title[lang] }}</h2>
@@ -178,6 +181,7 @@
                     </div>
                 </div>
 
+                <!-- 新增按鈕 -->
                 <button @click="openModal" class="ml-16 py-5 glass-panel rounded-[1.8rem] text-slate-400 hover:text-soft-pink hover:border-soft-pink transition-all flex items-center justify-center gap-3 text-[10px] font-bold tracking-widest uppercase border-dashed border-2 border-slate-100 w-[calc(100%-64px)] shadow-sm">
                     <i class="fa-solid fa-plus-circle"></i>
                     {{ lang === 'zh' ? '新增行程' : 'Add Event' }}
@@ -185,10 +189,14 @@
             </div>
         </main>
 
-        <!-- 彈窗 -->
+        <!-- 修正後的彈窗（預設隱藏且 z-index 極高） -->
         <transition name="fade">
-            <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-white/40 backdrop-blur-md">
-                <div class="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-pink-50 p-8 space-y-6">
+            <div v-if="showModal" class="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                <!-- 遮罩層 -->
+                <div class="absolute inset-0 bg-white/40 backdrop-blur-md" @click="closeModal"></div>
+                
+                <!-- 視窗主體 -->
+                <div class="relative bg-white w-full max-w-sm rounded-[3rem] shadow-2xl border border-pink-50 p-8 space-y-6">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">{{ lang === 'zh' ? '建立新行程' : 'New Schedule' }}</h3>
                         <button @click="closeModal" class="text-slate-300 hover:text-slate-500 transition-colors"><i class="fa-solid fa-xmark"></i></button>
@@ -238,7 +246,7 @@
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
-                const showModal = ref(false);
+                const showModal = ref(false); // 預設強制為 false
                 const newEvent = reactive({ time: '', location: '', desc: '' });
                 const user = ref(null);
                 const loading = ref(true);
@@ -254,7 +262,9 @@
                 const getDocRef = (uid) => doc(db, 'artifacts', appId, 'users', uid, 'data', 'itinerary-data');
 
                 onMounted(async () => {
-                    // 延遲執行櫻花動畫，確保容器已掛載
+                    // 初始化時確保彈窗是關閉的
+                    showModal.value = false;
+                    
                     setTimeout(createPetals, 500);
                     
                     try {
@@ -310,7 +320,11 @@
                 };
 
                 const toggleLang = () => lang.value = lang.value === 'zh' ? 'en' : 'zh';
-                const openModal = () => showModal.value = true;
+                
+                const openModal = () => {
+                    showModal.value = true;
+                };
+                
                 const closeModal = () => { 
                     showModal.value = false; 
                     newEvent.time = ''; newEvent.location = ''; newEvent.desc = ''; 
@@ -336,17 +350,15 @@
                     const box = document.getElementById('sakura-box');
                     if (!box) return;
                     box.innerHTML = '';
-                    // 增加到 40 片更有氛圍
                     for (let i = 0; i < 40; i++) {
                         const petal = document.createElement('div');
                         petal.className = 'petal';
-                        const size = Math.random() * 8 + 8 + 'px'; // 稍微大一點點
+                        const size = Math.random() * 8 + 8 + 'px';
                         petal.style.width = size;
                         petal.style.height = size;
                         petal.style.left = Math.random() * 100 + 'vw';
                         petal.style.animationDuration = Math.random() * 8 + 6 + 's';
                         petal.style.animationDelay = Math.random() * 10 + 's';
-                        // 隨機初始旋轉
                         petal.style.transform = `rotate(${Math.random() * 360}deg)`;
                         box.appendChild(petal);
                     }
