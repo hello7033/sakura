@@ -181,12 +181,8 @@
             const bootText = document.getElementById('boot-text');
             
             try {
-                // 1. 安全檢查 Firebase 腳本是否載入
-                if (typeof firebase === 'undefined') {
-                    throw new Error("Firebase 腳本未就緒");
-                }
+                if (typeof firebase === 'undefined') throw new Error("Firebase 未載入");
 
-                // 2. 初始化 Firebase
                 if (!firebase.apps.length) {
                     const config = JSON.parse(__firebase_config || '{}');
                     firebase.initializeApp(config);
@@ -196,13 +192,11 @@
                 db = firebase.firestore();
                 bootText.innerText = "VUE INITIALIZING...";
 
-                // 3. 啟動 Vue
                 initVue();
 
             } catch (e) {
                 console.error("啟動失敗:", e);
                 bootText.innerText = "LAUNCHING LOCAL MODE...";
-                // 即使失敗也嘗試啟動 Vue (本地模式)
                 setTimeout(initVue, 1000);
             }
         }
@@ -228,6 +222,7 @@
                         { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
                     ]);
 
+                    // 重要：Canvas 環境要求的正確 Firestore 路徑
                     const getDocRef = () => {
                         if (!user.value) return null;
                         return db.collection('artifacts').doc(appId).collection('users').doc(user.value.uid).collection('data').doc('itinerary');
@@ -243,7 +238,7 @@
                                 currency: toRaw(currency),
                                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
-                        } catch (e) { console.error("儲存失敗:", e); }
+                        } catch (e) { console.error("雲端存儲失敗:", e); }
                         finally { loading.value = false; }
                     };
 
@@ -297,31 +292,35 @@
                     onMounted(async () => {
                         startSakura();
                         try {
-                            if (!auth) throw new Error("Firebase Auth 未初始化");
+                            // 優先使用環境 Token 登入
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                const cred = await auth.signInWithCustomToken(__initial_auth_token);
+                                user.value = cred.user;
+                            } else {
+                                const cred = await auth.signInAnonymously();
+                                user.value = cred.user;
+                            }
 
-                            // 執行登入
-                            const cred = await auth.signInAnonymously();
-                            user.value = cred.user;
-
-                            // 監聽數據
                             const docRef = getDocRef();
+                            // 使用 snapshot 進行實時監聽
                             docRef.onSnapshot(doc => {
                                 if (doc.exists) {
                                     const data = doc.data();
                                     if (data.itineraries) itineraries.value = data.itineraries;
                                     if (data.currency) Object.assign(currency, data.currency);
                                 } else {
+                                    // 若無資料，存入初始結構
                                     save();
                                 }
                                 loading.value = false;
                                 hideLoader();
                             }, err => {
-                                console.error("Firestore 監聽失敗:", err);
+                                console.error("Firestore 讀取錯誤:", err);
                                 loading.value = false;
                                 hideLoader();
                             });
                         } catch (e) {
-                            console.error("Auth 流程失敗:", e);
+                            console.error("驗證失敗:", e);
                             loading.value = false;
                             hideLoader();
                         }
@@ -341,7 +340,6 @@
             }).mount('#app');
         }
 
-        // 確保視窗載入後啟動
         window.addEventListener('load', startApp);
     </script>
 </body>
