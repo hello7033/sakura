@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>東京旅遊行程表 - 穩定修正版</title>
+    <title>東京旅遊行程表 - 天氣與匯率加強版</title>
     <!-- Firebase SDK (保持引用以相容 Canvas 環境) -->
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
@@ -41,7 +41,7 @@
         </div>
 
         <header class="sakura-header p-10 rounded-b-[3rem] shadow-sm relative overflow-hidden">
-            <div class="flex justify-between items-start">
+            <div class="flex justify-between items-start relative z-10">
                 <div class="space-y-2">
                     <p class="text-[10px] tracking-[0.4em] font-bold text-soft-pink uppercase">Tokyo Journey</p>
                     <h1 class="text-3xl font-light text-slate-700">Spring <span class="italic font-serif">2026</span></h1>
@@ -50,9 +50,45 @@
                     {{ lang === 'zh' ? 'English' : '中文' }}
                 </button>
             </div>
+
+            <!-- 天氣資訊卡片 -->
+            <div class="mt-6 flex items-center gap-4 relative z-10">
+                <div class="flex items-center bg-white/60 px-4 py-2 rounded-2xl shadow-sm border border-white/40">
+                    <span class="text-xl mr-2">{{ weather.icon }}</span>
+                    <div>
+                        <div class="text-[10px] font-bold text-slate-400 uppercase leading-none">Tokyo</div>
+                        <div class="text-xs font-bold text-slate-600">{{ weather.temp }}°C · {{ weather.desc[lang] }}</div>
+                    </div>
+                </div>
+                <div class="text-[9px] text-slate-400 font-medium tracking-tighter">
+                    <i class="fa-solid fa-calendar-days mr-1"></i> APRIL 02 — 06
+                </div>
+            </div>
         </header>
 
         <main class="px-6 -mt-6 space-y-6">
+            <!-- 匯率計算機 -->
+            <section class="glass-panel p-6 rounded-[2rem] shadow-lg border border-pink-50">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Currency Calculator</div>
+                    <div class="text-[8px] text-slate-300">1 TWD ≈ {{ (1/0.21).toFixed(2) }} JPY</div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-bold text-soft-pink uppercase ml-1">JPY 日幣</label>
+                        <input type="number" v-model.number="currency.jpy" @input="convert('jpy')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">TWD 台幣</label>
+                        <input type="number" v-model.number="currency.twd" @input="convert('twd')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">AUD 澳幣</label>
+                        <input type="number" v-model.number="currency.aud" @input="convert('aud')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                    </div>
+                </div>
+            </section>
+
             <!-- 儲存狀態卡片 -->
             <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
                 <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -60,16 +96,6 @@
                     <span class="text-pink-400">{{ storageMode }}</span>
                 </div>
                 <div class="text-[8px] text-slate-300">Last: {{ lastSaved || 'N/A' }}</div>
-            </section>
-
-            <!-- 匯率轉換 -->
-            <section class="glass-panel p-6 rounded-[2rem] shadow-lg">
-                <div class="grid grid-cols-3 gap-3">
-                    <div v-for="key in ['jpy', 'twd', 'aud']" :key="key">
-                        <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">{{ key }}</label>
-                        <input type="number" v-model.number="currency[key]" @input="convert(key)" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
-                    </div>
-                </div>
             </section>
 
             <!-- 天數切換 -->
@@ -130,7 +156,15 @@
                 const showModal = ref(false);
                 const storageMode = ref('Offline (Local)');
                 const lastSaved = ref('');
-                const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
+                
+                // 天氣數據 (模擬即時數據)
+                const weather = reactive({
+                    temp: 18,
+                    icon: '🌸',
+                    desc: { zh: '晴朗/櫻花季', en: 'Sunny / Sakura' }
+                });
+
+                const currency = reactive({ jpy: 10000, twd: 2100, aud: 100.50 });
                 const form = reactive({ time: '', location: '', desc: '' });
                 const itineraries = ref([
                     { title: { zh: '第一天', en: 'Day 1' }, events: [] },
@@ -139,6 +173,25 @@
                     { title: { zh: '第四天', en: 'Day 4' }, events: [] },
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
+
+                // 匯率邏輯
+                const convert = (src) => {
+                    // 設定匯率常數 (可根據需求微調)
+                    const JPY_TO_TWD = 0.21;
+                    const AUD_TO_TWD = 20.8;
+                    
+                    if (src === 'jpy') {
+                        currency.twd = Math.round(currency.jpy * JPY_TO_TWD);
+                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
+                    } else if (src === 'twd') {
+                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
+                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
+                    } else if (src === 'aud') {
+                        currency.twd = Math.round(currency.aud * AUD_TO_TWD);
+                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
+                    }
+                    save();
+                };
 
                 // 安全儲存邏輯
                 const save = async () => {
@@ -149,10 +202,8 @@
                         lastUpdate: new Date().toISOString()
                     };
 
-                    // 強制本地儲存 (最保險)
                     localStorage.setItem('tokyo_itinerary_v1', JSON.stringify(dataToSave));
 
-                    // 嘗試雲端儲存 (僅限有設定 Firebase 的環境)
                     try {
                         const hasConfig = typeof __firebase_config !== 'undefined' && __firebase_config;
                         if (hasConfig && typeof firebase !== 'undefined' && firebase.apps.length > 0) {
@@ -168,7 +219,7 @@
                             }
                         }
                     } catch (e) {
-                        console.log("Cloud sync not available in this environment.");
+                        console.log("Cloud sync not active.");
                     }
                     
                     lastSaved.value = new Date().toLocaleTimeString();
@@ -181,27 +232,12 @@
                         try {
                             const parsed = JSON.parse(localData);
                             itineraries.value = parsed.itineraries;
-                            Object.assign(currency, parsed.currency);
+                            if(parsed.currency) Object.assign(currency, parsed.currency);
                             lastSaved.value = new Date(parsed.lastUpdate).toLocaleTimeString();
                         } catch (e) {
                             console.error("Data load error");
                         }
                     }
-                };
-
-                const convert = (src) => {
-                    const JPY_TWD = 0.211, AUD_TWD = 20.85;
-                    if (src === 'jpy') { 
-                        currency.twd = Math.round(currency.jpy * JPY_TWD); 
-                        currency.aud = (currency.twd / AUD_TWD).toFixed(2); 
-                    } else if (src === 'twd') { 
-                        currency.jpy = Math.round(currency.twd / JPY_TWD); 
-                        currency.aud = (currency.twd / AUD_TWD).toFixed(2); 
-                    } else if (src === 'aud') { 
-                        currency.twd = Math.round(currency.aud * AUD_TWD); 
-                        currency.jpy = Math.round(currency.twd / JPY_TWD); 
-                    }
-                    save();
                 };
 
                 const addEvent = () => {
@@ -221,7 +257,6 @@
                     save();
                 };
 
-                // Firebase 靜默初始化 (避免崩潰)
                 const silentFirebaseInit = async () => {
                     try {
                         const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
@@ -235,7 +270,7 @@
                             }
                         }
                     } catch (e) {
-                        console.log("Firebase not configured for this origin.");
+                        console.log("Firebase bypass.");
                     }
                 };
 
@@ -256,7 +291,7 @@
                     }
                 });
 
-                return { currentDay, lang, loading, itineraries, currency, showModal, form, storageMode, lastSaved, convert, addEvent, removeEvent };
+                return { currentDay, lang, loading, itineraries, currency, weather, showModal, form, storageMode, lastSaved, convert, addEvent, removeEvent };
             }
         }).mount('#app');
     </script>
