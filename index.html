@@ -76,9 +76,9 @@
             <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
                 <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     <i class="fa-solid fa-globe mr-1"></i> Mode: 
-                    <span class="text-pink-400">Shared Cloud Sync</span>
+                    <span class="text-pink-400">Public Shared Sync</span>
                 </div>
-                <div class="text-[8px] text-slate-300">ID: {{ sharedId }}</div>
+                <div class="text-[8px] text-slate-300">Sync: Active</div>
             </section>
 
             <!-- 匯率計算機 -->
@@ -155,7 +155,8 @@
 
         createApp({
             setup() {
-                const sharedId = 'tokyo-group-plan-2026'; // 固定路徑，讓所有人共享
+                // 獲取環境參數
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'shared-tokyo-2026';
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(true);
@@ -170,9 +171,15 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 核心同步路徑
+                // 強制鎖定公共共享路徑 (符合 Firebase 權限規則)
                 const getSharedDoc = () => {
-                    return firebase.firestore().collection('artifacts').doc(sharedId).collection('shared_data').doc('global');
+                    return firebase.firestore()
+                        .collection('artifacts')
+                        .doc(appId)
+                        .collection('public')
+                        .doc('data')
+                        .collection('shared_itinerary')
+                        .doc('global_config');
                 };
 
                 const save = async () => {
@@ -185,7 +192,7 @@
                         }));
                         await getSharedDoc().set(data);
                     } catch (e) {
-                        console.error("Cloud Save Failed", e);
+                        console.error("Sync Save Error:", e);
                     } finally {
                         setTimeout(() => loading.value = false, 500);
                     }
@@ -216,30 +223,45 @@
                 };
 
                 onMounted(async () => {
-                    // 初始化 Firebase
                     try {
+                        // 1. 初始化 Firebase
                         if (!firebase.apps.length) {
                             firebase.initializeApp(JSON.parse(__firebase_config));
                         }
-                        await firebase.auth().signInAnonymously();
+                        
+                        // 2. 強制進行身份驗證 (Firestore 運作前提)
+                        const auth = firebase.auth();
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
 
-                        // 啟動實時監聽：任何人修改，所有人同步
+                        // 3. 設定實時同步監聽
                         getSharedDoc().onSnapshot((doc) => {
                             if (doc.exists) {
                                 const data = doc.data();
-                                itineraries.value = data.itineraries;
+                                // 只在資料不同時更新，避免輸入框跳動
+                                itineraries.value = data.itineraries || itineraries.value;
                                 if(data.currency) Object.assign(currency, data.currency);
+                            } else {
+                                // 若無資料則進行首次初始化
+                                save();
                             }
                             loading.value = false;
-                            document.getElementById('app-loader').style.display = 'none';
+                            const loader = document.getElementById('app-loader');
+                            if (loader) loader.style.display = 'none';
+                        }, (err) => {
+                            console.error("Snapshot Error:", err);
                         });
 
                     } catch (e) {
-                        console.error("Sync Error", e);
-                        document.getElementById('app-loader').innerHTML = "⚠️ Cloud Error. Check console.";
+                        console.error("Cloud Connection Failed:", e);
+                        const loader = document.getElementById('app-loader');
+                        if (loader) loader.innerHTML = `<div class="p-6 text-center text-xs text-red-400 font-bold uppercase">Sync Failed: ${e.message}</div>`;
                     }
 
-                    // 櫻花
+                    // 櫻花裝飾
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
@@ -249,7 +271,7 @@
                     }
                 });
 
-                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert, sharedId };
+                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert };
             }
         }).mount('#app');
     </script>
