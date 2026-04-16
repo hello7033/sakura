@@ -155,21 +155,20 @@
 
         createApp({
             setup() {
-                // 安全讀取環境變數
                 const getSafeVar = (name) => {
-                    if (typeof window[name] !== 'undefined') return window[name];
-                    return null;
+                    try { return window[name]; } catch(e) { return null; }
                 };
 
-                const appId = getSafeVar('__app_id') || 'shared-tokyo-2026';
+                const appId = getSafeVar('__app_id') || 'shared-tokyo-v1';
                 const firebaseConfigStr = getSafeVar('__firebase_config');
-                const hasFirebaseConfig = !!firebaseConfigStr;
                 
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(true);
-                const syncStatus = ref('Initializing...');
+                const syncStatus = ref('Starting...');
                 const showModal = ref(false);
+                const isFirstLoad = ref(true); // 用於防止初次監聽反向覆蓋
+                
                 const currency = reactive({ jpy: 10000, twd: 2100, aud: 100.50 });
                 const form = reactive({ time: '', location: '', desc: '' });
                 const itineraries = ref([
@@ -180,33 +179,33 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 修正路徑結構：artifacts/{appId}/public/data/{collectionName}
+                // 強制規範的路徑結構
                 const getDocRef = () => {
                     return firebase.firestore()
                         .collection('artifacts')
                         .doc(appId)
                         .collection('public')
                         .doc('data')
-                        .collection('shared_configs')
-                        .doc('main');
+                        .collection('travel_plans')
+                        .doc('tokyo2026');
                 };
 
                 const saveToCloud = async () => {
-                    if (!hasFirebaseConfig) return;
+                    if (!firebaseConfigStr || isFirstLoad.value) return;
                     loading.value = true;
                     try {
                         const payload = JSON.parse(JSON.stringify({
                             itineraries: toRaw(itineraries.value),
                             currency: toRaw(currency),
-                            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                            ts: firebase.firestore.FieldValue.serverTimestamp()
                         }));
                         await getDocRef().set(payload, { merge: true });
-                        syncStatus.value = 'Synced';
+                        syncStatus.value = 'Cloud Saved';
                     } catch (e) {
-                        console.error("Cloud Save Error:", e);
-                        syncStatus.value = 'Sync Error';
+                        console.error("Cloud Save Failed:", e);
+                        syncStatus.value = 'Sync Failed';
                     } finally {
-                        setTimeout(() => loading.value = false, 300);
+                        setTimeout(() => loading.value = false, 500);
                     }
                 };
 
@@ -244,20 +243,20 @@
                         document.body.appendChild(p);
                     }
 
-                    if (!hasFirebaseConfig) {
-                        syncStatus.value = 'Offline Mode';
+                    if (!firebaseConfigStr) {
+                        syncStatus.value = 'No Config - Local Only';
                         loading.value = false;
                         document.getElementById('app-loader').style.display = 'none';
                         return;
                     }
 
                     try {
-                        // 1. 初始化 Firebase
+                        // 1. 初始化
                         if (!firebase.apps.length) {
                             firebase.initializeApp(JSON.parse(firebaseConfigStr));
                         }
 
-                        // 2. 身份驗證 (Firestore 必須登入)
+                        // 2. 登入（這步最關鍵，沒登入不能讀寫）
                         const auth = firebase.auth();
                         const token = getSafeVar('__initial_auth_token');
                         if (token) {
@@ -266,37 +265,33 @@
                             await auth.signInAnonymously();
                         }
                         
-                        syncStatus.value = 'Cloud Connected';
+                        syncStatus.value = 'Authenticated';
 
-                        // 3. 監聽數據
+                        // 3. 監聽與初次讀取
                         getDocRef().onSnapshot((doc) => {
                             if (doc.exists) {
-                                const cloudData = doc.data();
-                                // 更新本地響應式數據
-                                if (cloudData.itineraries) {
-                                    itineraries.value = cloudData.itineraries;
-                                }
-                                if (cloudData.currency) {
-                                    Object.assign(currency, cloudData.currency);
-                                }
+                                const data = doc.data();
+                                // 只有當資料存在時才更新本地，防止清空
+                                if (data.itineraries) itineraries.value = data.itineraries;
+                                if (data.currency) Object.assign(currency, data.currency);
+                                syncStatus.value = 'Cloud Active';
                             } else {
-                                // 雲端無資料時，先上傳一次目前的預設資料
+                                // 第一次使用，上傳預設值
+                                isFirstLoad.value = false;
                                 saveToCloud();
                             }
                             
-                            loading.value = false;
-                            syncStatus.value = 'Active';
-                            document.getElementById('app-loader').style.display = 'none';
-                        }, (error) => {
-                            console.error("Firestore Listen Error:", error);
-                            syncStatus.value = 'Sync Interrupted';
+                            isFirstLoad.value = false;
                             loading.value = false;
                             document.getElementById('app-loader').style.display = 'none';
+                        }, (err) => {
+                            console.error("Firestore error:", err);
+                            syncStatus.value = 'Connection Error';
                         });
 
                     } catch (err) {
-                        console.error("Cloud Initialization Failed:", err);
-                        syncStatus.value = 'Cloud Error';
+                        console.error("Firebase Init Error:", err);
+                        syncStatus.value = 'Init Error';
                         loading.value = false;
                         document.getElementById('app-loader').style.display = 'none';
                     }
