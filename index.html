@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>東京旅遊行程表 - 天氣與匯率加強版</title>
-    <!-- Firebase SDK (保持引用以相容 Canvas 環境) -->
+    <title>東京旅遊行程表 - 多人即時同步版</title>
+    <!-- Firebase SDK (Compat Mode) -->
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
@@ -29,15 +29,21 @@
             100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
         }
         .petal { position: fixed; background: #ffd1dc; border-radius: 100% 0 100% 0; pointer-events: none; z-index: 0; animation: fall linear infinite; }
+        
+        #app-loader { position: fixed; inset: 0; background: #fff5f6; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
     </style>
 </head>
 <body class="pb-12">
+    <!-- 載入動畫層 -->
+    <div id="app-loader">
+        <div class="text-4xl animate-bounce mb-4">🌸</div>
+        <div class="text-[10px] tracking-[0.3em] text-soft-pink font-bold uppercase">Connecting Cloud...</div>
+    </div>
+
     <div id="app" v-cloak class="max-w-md mx-auto relative z-10">
-        <!-- 狀態標籤 -->
-        <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-            <div v-if="loading" class="bg-white/95 px-5 py-2 rounded-full shadow-lg text-[10px] text-soft-pink font-bold tracking-widest border border-pink-100 flex items-center gap-2">
-                <i class="fa-solid fa-save animate-pulse"></i> SAVING...
-            </div>
+        <!-- 同步狀態提示 -->
+        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-white/95 px-5 py-2 rounded-full shadow-lg text-[10px] text-soft-pink font-bold tracking-widest border border-pink-100 flex items-center gap-2">
+            <i class="fa-solid fa-cloud-arrow-up animate-pulse"></i> SYNCING...
         </div>
 
         <header class="sakura-header p-10 rounded-b-[3rem] shadow-sm relative overflow-hidden">
@@ -51,13 +57,12 @@
                 </button>
             </div>
 
-            <!-- 天氣資訊卡片 -->
             <div class="mt-6 flex items-center gap-4 relative z-10">
                 <div class="flex items-center bg-white/60 px-4 py-2 rounded-2xl shadow-sm border border-white/40">
-                    <span class="text-xl mr-2">{{ weather.icon }}</span>
+                    <span class="text-xl mr-2">🌸</span>
                     <div>
                         <div class="text-[10px] font-bold text-slate-400 uppercase leading-none">Tokyo</div>
-                        <div class="text-xs font-bold text-slate-600">{{ weather.temp }}°C · {{ weather.desc[lang] }}</div>
+                        <div class="text-xs font-bold text-slate-600">18°C · {{ lang === 'zh' ? '晴朗/櫻花季' : 'Sunny/Sakura' }}</div>
                     </div>
                 </div>
                 <div class="text-[9px] text-slate-400 font-medium tracking-tighter">
@@ -67,35 +72,35 @@
         </header>
 
         <main class="px-6 -mt-6 space-y-6">
+            <!-- 共享資料狀態 -->
+            <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <i class="fa-solid fa-globe mr-1"></i> Mode: 
+                    <span class="text-pink-400">Shared Cloud Sync</span>
+                </div>
+                <div class="text-[8px] text-slate-300">ID: {{ sharedId }}</div>
+            </section>
+
             <!-- 匯率計算機 -->
             <section class="glass-panel p-6 rounded-[2rem] shadow-lg border border-pink-50">
                 <div class="flex items-center justify-between mb-4">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Currency Calculator</div>
-                    <div class="text-[8px] text-slate-300">1 TWD ≈ {{ (1/0.21).toFixed(2) }} JPY</div>
+                    <div class="text-[8px] text-slate-300 italic">Auto-syncs for everyone</div>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                     <div class="space-y-1">
                         <label class="text-[9px] font-bold text-soft-pink uppercase ml-1">JPY 日幣</label>
-                        <input type="number" v-model.number="currency.jpy" @input="convert('jpy')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                        <input type="number" v-model.number="currency.jpy" @input="convert('jpy')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                     <div class="space-y-1">
                         <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">TWD 台幣</label>
-                        <input type="number" v-model.number="currency.twd" @input="convert('twd')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                        <input type="number" v-model.number="currency.twd" @input="convert('twd')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                     <div class="space-y-1">
                         <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">AUD 澳幣</label>
-                        <input type="number" v-model.number="currency.aud" @input="convert('aud')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-pink-200">
+                        <input type="number" v-model.number="currency.aud" @input="convert('aud')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                 </div>
-            </section>
-
-            <!-- 儲存狀態卡片 -->
-            <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
-                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <i class="fa-solid fa-shield-halved mr-1"></i> Mode: 
-                    <span class="text-pink-400">{{ storageMode }}</span>
-                </div>
-                <div class="text-[8px] text-slate-300">Last: {{ lastSaved || 'N/A' }}</div>
             </section>
 
             <!-- 天數切換 -->
@@ -109,12 +114,12 @@
             <!-- 行程清單 -->
             <div class="space-y-4">
                 <div v-if="itineraries[currentDay-1].events.length === 0" class="text-center py-10 text-slate-300 text-[10px] uppercase tracking-widest">
-                    No plans for today
+                    No shared plans yet
                 </div>
                 
                 <div v-for="(event, idx) in itineraries[currentDay-1].events" :key="idx" class="flex gap-4 group">
                     <div class="w-10 text-[9px] font-bold text-slate-300 pt-4 text-right uppercase">{{ event.time[lang] }}</div>
-                    <div class="flex-1 glass-panel p-5 rounded-[1.5rem] relative">
+                    <div class="flex-1 glass-panel p-5 rounded-[1.5rem] relative hover:shadow-md transition-all">
                         <button @click="removeEvent(idx)" class="absolute top-4 right-4 text-slate-200 hover:text-red-400 transition-colors">
                             <i class="fa-solid fa-trash text-[10px]"></i>
                         </button>
@@ -131,16 +136,16 @@
 
         <!-- 表單彈窗 -->
         <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <div class="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" @click="showModal = false"></div>
+            <div class="absolute inset-0 bg-slate-900/20 backdrop-blur-md" @click="showModal = false"></div>
             <div class="relative bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl space-y-4">
                 <div class="text-center mb-2">
-                    <span class="text-2xl">🗓️</span>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">New Entry</p>
+                    <span class="text-2xl">🌍</span>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">New Public Entry</p>
                 </div>
                 <input v-model="form.time" placeholder="Time (09:00)" class="w-full border-b py-2 text-xs focus:outline-none">
                 <input v-model="form.location" placeholder="Location Name" class="w-full border-b py-2 text-xs focus:outline-none">
                 <textarea v-model="form.desc" placeholder="Notes..." class="w-full border-b py-2 text-xs focus:outline-none resize-none"></textarea>
-                <button @click="addEvent" :disabled="!form.location" class="w-full py-4 bg-slate-800 text-white rounded-2xl text-[10px] font-bold uppercase disabled:opacity-30">Confirm</button>
+                <button @click="addEvent" :disabled="!form.location" class="w-full py-4 bg-slate-800 text-white rounded-2xl text-[10px] font-bold uppercase">Update Shared Plan</button>
             </div>
         </div>
     </div>
@@ -150,20 +155,11 @@
 
         createApp({
             setup() {
+                const sharedId = 'tokyo-group-plan-2026'; // 固定路徑，讓所有人共享
                 const currentDay = ref(1);
                 const lang = ref('zh');
-                const loading = ref(false);
+                const loading = ref(true);
                 const showModal = ref(false);
-                const storageMode = ref('Offline (Local)');
-                const lastSaved = ref('');
-                
-                // 天氣數據 (模擬即時數據)
-                const weather = reactive({
-                    temp: 18,
-                    icon: '🌸',
-                    desc: { zh: '晴朗/櫻花季', en: 'Sunny / Sakura' }
-                });
-
                 const currency = reactive({ jpy: 10000, twd: 2100, aud: 100.50 });
                 const form = reactive({ time: '', location: '', desc: '' });
                 const itineraries = ref([
@@ -174,124 +170,86 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 匯率邏輯
-                const convert = (src) => {
-                    // 設定匯率常數 (可根據需求微調)
-                    const JPY_TO_TWD = 0.21;
-                    const AUD_TO_TWD = 20.8;
-                    
-                    if (src === 'jpy') {
-                        currency.twd = Math.round(currency.jpy * JPY_TO_TWD);
-                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
-                    } else if (src === 'twd') {
-                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
-                        currency.aud = (currency.twd / AUD_TO_TWD).toFixed(2);
-                    } else if (src === 'aud') {
-                        currency.twd = Math.round(currency.aud * AUD_TO_TWD);
-                        currency.jpy = Math.round(currency.twd / JPY_TO_TWD);
+                // 核心同步路徑
+                const getSharedDoc = () => {
+                    return firebase.firestore().collection('artifacts').doc(sharedId).collection('shared_data').doc('global');
+                };
+
+                const save = async () => {
+                    loading.value = true;
+                    try {
+                        const data = JSON.parse(JSON.stringify({
+                            itineraries: toRaw(itineraries.value),
+                            currency: toRaw(currency),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        }));
+                        await getSharedDoc().set(data);
+                    } catch (e) {
+                        console.error("Cloud Save Failed", e);
+                    } finally {
+                        setTimeout(() => loading.value = false, 500);
                     }
+                };
+
+                const convert = (src) => {
+                    const JPY_TWD = 0.21, AUD_TWD = 20.8;
+                    if (src === 'jpy') { currency.twd = Math.round(currency.jpy * JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
+                    else if (src === 'twd') { currency.jpy = Math.round(currency.twd / JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
+                    else if (src === 'aud') { currency.twd = Math.round(currency.aud * AUD_TWD); currency.jpy = Math.round(currency.twd / JPY_TWD); }
                     save();
                 };
 
-                // 安全儲存邏輯
-                const save = async () => {
-                    loading.value = true;
-                    const dataToSave = {
-                        itineraries: JSON.parse(JSON.stringify(toRaw(itineraries.value))),
-                        currency: JSON.parse(JSON.stringify(toRaw(currency))),
-                        lastUpdate: new Date().toISOString()
-                    };
-
-                    localStorage.setItem('tokyo_itinerary_v1', JSON.stringify(dataToSave));
-
-                    try {
-                        const hasConfig = typeof __firebase_config !== 'undefined' && __firebase_config;
-                        if (hasConfig && typeof firebase !== 'undefined' && firebase.apps.length > 0) {
-                            const user = firebase.auth().currentUser;
-                            if (user) {
-                                const db = firebase.firestore();
-                                const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-planner';
-                                await db.collection('artifacts').doc(appId)
-                                        .collection('users').doc(user.uid)
-                                        .collection('data').doc('itinerary')
-                                        .set(dataToSave);
-                                storageMode.value = 'Cloud Sync On';
-                            }
-                        }
-                    } catch (e) {
-                        console.log("Cloud sync not active.");
-                    }
-                    
-                    lastSaved.value = new Date().toLocaleTimeString();
-                    setTimeout(() => loading.value = false, 400);
-                };
-
-                const loadData = () => {
-                    const localData = localStorage.getItem('tokyo_itinerary_v1');
-                    if (localData) {
-                        try {
-                            const parsed = JSON.parse(localData);
-                            itineraries.value = parsed.itineraries;
-                            if(parsed.currency) Object.assign(currency, parsed.currency);
-                            lastSaved.value = new Date(parsed.lastUpdate).toLocaleTimeString();
-                        } catch (e) {
-                            console.error("Data load error");
-                        }
-                    }
-                };
-
-                const addEvent = () => {
-                    const dayIdx = currentDay.value - 1;
-                    itineraries.value[dayIdx].events.push({
+                const addEvent = async () => {
+                    itineraries.value[currentDay.value - 1].events.push({
                         time: { zh: form.time || '待定', en: form.time || 'TBD' },
                         location: { zh: form.location, en: form.location },
                         desc: { zh: form.desc || '-', en: form.desc || '-' }
                     });
                     showModal.value = false;
                     Object.assign(form, { time: '', location: '', desc: '' });
-                    save();
+                    await save();
                 };
 
-                const removeEvent = (idx) => {
+                const removeEvent = async (idx) => {
                     itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                    save();
+                    await save();
                 };
 
-                const silentFirebaseInit = async () => {
+                onMounted(async () => {
+                    // 初始化 Firebase
                     try {
-                        const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-                        if (configStr && !firebase.apps.length) {
-                            firebase.initializeApp(JSON.parse(configStr));
-                            const auth = firebase.auth();
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await auth.signInWithCustomToken(__initial_auth_token);
-                            } else {
-                                await auth.signInAnonymously();
-                            }
+                        if (!firebase.apps.length) {
+                            firebase.initializeApp(JSON.parse(__firebase_config));
                         }
-                    } catch (e) {
-                        console.log("Firebase bypass.");
-                    }
-                };
+                        await firebase.auth().signInAnonymously();
 
-                onMounted(() => {
-                    loadData();
-                    silentFirebaseInit();
-                    
-                    // 櫻花特效
-                    const bg = document.body;
-                    for(let i=0; i<12; i++) {
+                        // 啟動實時監聽：任何人修改，所有人同步
+                        getSharedDoc().onSnapshot((doc) => {
+                            if (doc.exists) {
+                                const data = doc.data();
+                                itineraries.value = data.itineraries;
+                                if(data.currency) Object.assign(currency, data.currency);
+                            }
+                            loading.value = false;
+                            document.getElementById('app-loader').style.display = 'none';
+                        });
+
+                    } catch (e) {
+                        console.error("Sync Error", e);
+                        document.getElementById('app-loader').innerHTML = "⚠️ Cloud Error. Check console.";
+                    }
+
+                    // 櫻花
+                    for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
                         p.style.left = Math.random() * 100 + 'vw';
-                        p.style.width = p.style.height = (Math.random() * 10 + 5) + 'px';
                         p.style.animationDuration = (Math.random() * 5 + 5) + 's';
-                        p.style.animationDelay = (Math.random() * 5) + 's';
-                        bg.appendChild(p);
+                        document.body.appendChild(p);
                     }
                 });
 
-                return { currentDay, lang, loading, itineraries, currency, weather, showModal, form, storageMode, lastSaved, convert, addEvent, removeEvent };
+                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert, sharedId };
             }
         }).mount('#app');
     </script>
