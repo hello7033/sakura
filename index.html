@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本東京 5D4N - 終極穩定版</title>
-    <!-- 引入全域 UMD 腳本：Firebase 11 (Compat Mode) -->
+    <title>東京旅遊行程表 - 離線+雲端雙模版</title>
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore-compat.js"></script>
-    <!-- 引入全域 UMD 腳本：Vue 3 -->
+    <!-- Vue 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- Tailwind & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -17,17 +17,8 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
         [v-cloak] { display: none !important; }
-        body { 
-            font-family: 'Noto Sans TC', sans-serif; 
-            background: #fff5f6; 
-            color: #5c5c5c;
-            min-height: 100vh;
-        }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-        }
+        body { font-family: 'Noto Sans TC', sans-serif; background: #fff5f6; color: #5c5c5c; min-height: 100vh; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.6); }
         .sakura-header { background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%); }
         .text-soft-pink { color: #f2bac5; }
         .bg-soft-pink { background-color: #f2bac5; }
@@ -37,305 +28,185 @@
             10% { opacity: 1; }
             100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
         }
-        .petal {
-            position: fixed;
-            background: #ffd1dc;
-            border-radius: 100% 0 100% 0;
-            pointer-events: none;
-            z-index: 0;
-            animation: fall linear infinite;
-        }
-        
-        #boot-loader {
-            position: fixed;
-            inset: 0;
-            background: #fff5f6;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        }
+        .petal { position: fixed; background: #ffd1dc; border-radius: 100% 0 100% 0; pointer-events: none; z-index: 0; animation: fall linear infinite; }
     </style>
 </head>
 <body class="pb-12">
-    <!-- 強制載入層 -->
-    <div id="boot-loader">
-        <div class="text-4xl animate-bounce mb-4">🌸</div>
-        <div id="boot-text" class="text-[10px] tracking-[0.3em] text-soft-pink font-bold uppercase">Connecting to Cloud...</div>
-    </div>
-
-    <!-- 櫻花背景 -->
-    <div id="sakura-bg"></div>
-
     <div id="app" v-cloak class="max-w-md mx-auto relative z-10">
-        <!-- 狀態提示列 -->
-        <div v-if="loading" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-white/95 px-5 py-2 rounded-full shadow-lg text-[10px] text-soft-pink font-bold tracking-widest border border-pink-100 flex items-center gap-2">
-            <i class="fa-solid fa-cloud-arrow-up animate-pulse"></i> SYNCING...
+        <!-- 狀態標籤 -->
+        <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+            <div v-if="loading" class="bg-white/95 px-5 py-2 rounded-full shadow-lg text-[10px] text-soft-pink font-bold tracking-widest border border-pink-100 flex items-center gap-2">
+                <i class="fa-solid fa-sync animate-spin"></i> SYNCING
+            </div>
         </div>
 
         <header class="sakura-header p-10 rounded-b-[3rem] shadow-sm relative overflow-hidden">
-            <div class="flex justify-between items-start relative z-10">
+            <div class="flex justify-between items-start">
                 <div class="space-y-2">
                     <p class="text-[10px] tracking-[0.4em] font-bold text-soft-pink uppercase">Tokyo Journey</p>
                     <h1 class="text-3xl font-light text-slate-700">Spring <span class="italic font-serif">2026</span></h1>
                 </div>
-                <button @click="toggleLang" class="text-[10px] font-bold text-slate-400 border-b border-slate-200 pb-0.5 uppercase tracking-widest">
+                <button @click="lang = lang === 'zh' ? 'en' : 'zh'" class="text-[10px] font-bold text-slate-400 border-b border-slate-200 uppercase">
                     {{ lang === 'zh' ? 'English' : '中文' }}
                 </button>
-            </div>
-            
-            <div class="mt-6 flex items-center gap-4 relative z-10">
-                <div class="text-[10px] text-slate-400 font-medium">
-                    <i class="fa-solid fa-calendar-days mr-1"></i> APRIL 02 — 06
-                </div>
-                <div class="bg-soft-pink text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-sm">
-                    TOKYO 18°C
-                </div>
             </div>
         </header>
 
         <main class="px-6 -mt-6 space-y-6">
-            <!-- 雲端與匯率卡片 -->
-            <section class="glass-panel p-6 rounded-[2rem] shadow-lg space-y-6">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-lg shadow-sm">📡</div>
-                        <div class="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
-                            Cloud: <span :class="user ? 'text-green-400' : 'text-red-400'" class="ml-1">{{ user ? 'Linked' : 'Offline' }}</span>
-                        </div>
-                    </div>
-                    <!-- 強制同步按鈕 -->
-                    <button @click="save" class="text-[10px] bg-slate-50 hover:bg-pink-50 text-slate-400 hover:text-soft-pink px-3 py-1 rounded-full transition-colors font-bold uppercase tracking-tighter">
-                        <i class="fa-solid fa-rotate mr-1"></i> Force Save
-                    </button>
+            <!-- 儲存模式顯示 -->
+            <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <i class="fa-solid fa-database mr-1"></i> Mode: 
+                    <span class="text-slate-600">{{ storageMode }}</span>
                 </div>
+                <div class="text-[8px] text-slate-300">{{ lastSaved }}</div>
+            </section>
 
-                <!-- 匯率轉換 -->
-                <div class="pt-4 border-t border-slate-50">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Currency Converter</div>
-                    <div class="grid grid-cols-3 gap-3">
-                        <div v-for="key in ['jpy', 'twd', 'aud']" :key="key" class="space-y-1">
-                            <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">{{ key }}</label>
-                            <input type="number" v-model="currency[key]" @change="convert(key)" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-medium focus:ring-1 focus:ring-pink-100 outline-none">
-                        </div>
+            <!-- 匯率轉換 -->
+            <section class="glass-panel p-6 rounded-[2rem] shadow-lg">
+                <div class="grid grid-cols-3 gap-3">
+                    <div v-for="key in ['jpy', 'twd', 'aud']" :key="key">
+                        <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">{{ key }}</label>
+                        <input type="number" v-model.number="currency[key]" @input="convert(key)" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                 </div>
             </section>
 
-            <!-- 天數導覽 -->
+            <!-- 天數切換 -->
             <nav class="flex justify-between items-center px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full shadow-sm">
                 <button v-for="d in 5" :key="d" @click="currentDay = d"
-                    :class="['w-10 h-10 rounded-full text-[11px] transition-all flex items-center justify-center', 
-                             currentDay === d ? 'bg-soft-pink text-white font-bold shadow-md' : 'text-slate-300 hover:text-slate-400']">
+                    :class="['w-10 h-10 rounded-full text-[11px] transition-all', currentDay === d ? 'bg-soft-pink text-white font-bold shadow-md' : 'text-slate-300']">
                     {{ d }}
                 </button>
             </nav>
 
             <!-- 行程清單 -->
             <div class="space-y-4">
-                <div v-if="itineraries[currentDay-1]" class="text-center py-2">
-                    <h2 class="text-[11px] font-bold text-slate-400 tracking-[0.3em] uppercase">{{ itineraries[currentDay-1].title[lang] }}</h2>
-                </div>
-
-                <div v-for="(event, idx) in itineraries[currentDay-1].events" :key="idx" class="flex gap-4 group animate-fadeIn">
-                    <div class="w-10 text-[9px] font-bold text-slate-300 pt-4 uppercase text-right">{{ event.time[lang] }}</div>
-                    <div class="flex-1 glass-panel p-5 rounded-[1.5rem] relative group-hover:shadow-md transition-all">
-                        <button @click="removeEvent(idx)" class="absolute top-4 right-4 text-slate-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <i class="fa-solid fa-trash-can text-[10px]"></i>
-                        </button>
-                        <h3 class="text-sm font-medium text-slate-600 mb-1">{{ event.location[lang] }}</h3>
-                        <p class="text-[10px] text-slate-400 leading-relaxed">{{ event.desc[lang] }}</p>
+                <div v-for="(event, idx) in itineraries[currentDay-1].events" :key="idx" class="flex gap-4 group">
+                    <div class="w-10 text-[9px] font-bold text-slate-300 pt-4 text-right uppercase">{{ event.time[lang] }}</div>
+                    <div class="flex-1 glass-panel p-5 rounded-[1.5rem] relative">
+                        <button @click="removeEvent(idx)" class="absolute top-4 right-4 text-slate-200 hover:text-red-400"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                        <h3 class="text-sm font-bold text-slate-600 mb-1">{{ event.location[lang] }}</h3>
+                        <p class="text-[10px] text-slate-400">{{ event.desc[lang] }}</p>
                     </div>
                 </div>
-
-                <!-- 新增按鈕 -->
-                <button @click="showModal = true" class="w-full ml-14 w-[calc(100%-56px)] py-4 border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-300 text-[10px] font-bold tracking-[0.2em] uppercase hover:text-soft-pink hover:border-soft-pink transition-all bg-white/30">
-                    + Add New Event
+                <button @click="showModal = true" class="w-full ml-14 w-[calc(100%-56px)] py-4 border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-300 text-[10px] font-bold uppercase hover:text-soft-pink bg-white/40">
+                    + Add Event
                 </button>
             </div>
         </main>
 
-        <!-- 新增視窗 -->
+        <!-- 表單彈窗 -->
         <div v-if="showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <div class="absolute inset-0 bg-slate-900/20 backdrop-blur-md" @click="showModal = false"></div>
-            <div class="relative bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl space-y-5 animate-slideUp">
-                <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">New Entry</h4>
-                <div class="space-y-3">
-                    <input v-model="form.time" placeholder="Time (e.g. 10:00)" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none">
-                    <input v-model="form.location" placeholder="Location" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none">
-                    <textarea v-model="form.desc" placeholder="Notes" class="w-full border-b border-slate-100 py-2 text-xs focus:outline-none resize-none"></textarea>
-                </div>
-                <button @click="addEvent" :disabled="!form.location" class="w-full py-4 bg-slate-800 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest disabled:opacity-30">Add to Plan</button>
+            <div class="relative bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl space-y-4">
+                <input v-model="form.time" placeholder="Time" class="w-full border-b py-2 text-xs focus:outline-none">
+                <input v-model="form.location" placeholder="Location" class="w-full border-b py-2 text-xs focus:outline-none">
+                <textarea v-model="form.desc" placeholder="Notes" class="w-full border-b py-2 text-xs focus:outline-none"></textarea>
+                <button @click="addEvent" class="w-full py-4 bg-slate-800 text-white rounded-2xl text-[10px] font-bold uppercase">Confirm</button>
             </div>
         </div>
     </div>
 
     <script>
-        // 核心配置：使用特定 ID 避免路徑衝突
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-planner-final-sync';
-        let auth, db;
+        const { createApp, ref, reactive, onMounted, toRaw } = Vue;
 
-        async function bootstrap() {
-            const bootText = document.getElementById('boot-text');
-            try {
-                // 等待全域 Firebase 載入
-                if (typeof firebase === 'undefined') {
-                    setTimeout(bootstrap, 300);
-                    return;
-                }
+        createApp({
+            setup() {
+                const currentDay = ref(1);
+                const lang = ref('zh');
+                const loading = ref(false);
+                const showModal = ref(false);
+                const storageMode = ref('Local Storage');
+                const lastSaved = ref('');
+                const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
+                const form = reactive({ time: '', location: '', desc: '' });
+                const itineraries = ref([
+                    { title: { zh: '第一天', en: 'Day 1' }, events: [] },
+                    { title: { zh: '第二天', en: 'Day 2' }, events: [] },
+                    { title: { zh: '第三天', en: 'Day 3' }, events: [] },
+                    { title: { zh: '第四天', en: 'Day 4' }, events: [] },
+                    { title: { zh: '第五天', en: 'Day 5' }, events: [] }
+                ]);
 
-                // 1. 初始化 Firebase
-                if (!firebase.apps.length) {
-                    const config = JSON.parse(__firebase_config || '{}');
-                    firebase.initializeApp(config);
-                }
-                
-                auth = firebase.auth();
-                db = firebase.firestore();
-                
-                // 2. 啟動 Auth 並等待
-                bootText.innerText = "AUTHENTICATING...";
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await auth.signInWithCustomToken(__initial_auth_token);
-                } else {
-                    await auth.signInAnonymously();
-                }
-
-                // 3. 確保獲取到 UID 後再掛載 Vue
-                if (auth.currentUser) {
-                    bootText.innerText = "LINKING DATA...";
-                    mountVue();
-                } else {
-                    throw new Error("Auth failed");
-                }
-
-            } catch (e) {
-                console.error("啟動錯誤:", e);
-                bootText.innerText = "CONNECTION ERROR - RELOADING...";
-                setTimeout(() => window.location.reload(), 2000);
-            }
-        }
-
-        function mountVue() {
-            const { createApp, ref, reactive, onMounted, toRaw } = Vue;
-
-            createApp({
-                setup() {
-                    const currentDay = ref(1);
-                    const lang = ref('zh');
-                    const loading = ref(false);
-                    const user = ref(auth.currentUser);
-                    const showModal = ref(false);
-                    const currency = reactive({ jpy: 1000, twd: 211, aud: 10.12 });
-                    const form = reactive({ time: '', location: '', desc: '' });
-
-                    const itineraries = ref([
-                        { title: { zh: '第一天：抵達與漫步', en: 'Day 1: Arrival' }, events: [] },
-                        { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: [] },
-                        { title: { zh: '第三天：奇幻迪士尼', en: 'Day 3: Disney Magic' }, events: [] },
-                        { title: { zh: '第四天：潮流原宿', en: 'Day 4: Harajuku Vibe' }, events: [] },
-                        { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
-                    ]);
-
-                    const getDocRef = () => {
-                        return db.collection('artifacts').doc(appId)
-                                 .collection('users').doc(auth.currentUser.uid)
-                                 .collection('data').doc('itinerary');
+                // 核心儲存邏輯 (自動切換 Local 或 Cloud)
+                const save = async () => {
+                    loading.value = true;
+                    const data = {
+                        itineraries: JSON.parse(JSON.stringify(toRaw(itineraries.value))),
+                        currency: JSON.parse(JSON.stringify(toRaw(currency))),
+                        updatedAt: new Date().toISOString()
                     };
 
-                    // 核心存檔邏輯：強制純化資料
-                    const save = async () => {
-                        if (!auth.currentUser) return;
-                        loading.value = true;
-                        try {
-                            const docRef = getDocRef();
-                            const payload = {
-                                itineraries: JSON.parse(JSON.stringify(toRaw(itineraries.value))),
-                                currency: JSON.parse(JSON.stringify(toRaw(currency))),
-                                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-                            };
-                            await docRef.set(payload, { merge: true });
-                        } catch (e) {
-                            console.error("存檔失敗:", e);
-                        } finally {
-                            setTimeout(() => loading.value = false, 500);
+                    // 1. 儲存到 Local (確保就算沒網路也有備份)
+                    localStorage.setItem('tokyo_itinerary_backup', JSON.stringify(data));
+
+                    // 2. 嘗試儲存到 Cloud (如果 Firebase 已設定)
+                    try {
+                        if (typeof firebase !== 'undefined' && firebase.apps.length > 0 && firebase.auth().currentUser) {
+                            const db = firebase.firestore();
+                            const uid = firebase.auth().currentUser.uid;
+                            await db.collection('itineraries').doc(uid).set(data);
+                            storageMode.value = 'Cloud + Local';
                         }
-                    };
+                    } catch (e) {
+                        console.warn("Cloud save skipped - using Local only");
+                        storageMode.value = 'Local Storage Only';
+                    }
+                    
+                    lastSaved.value = new Date().toLocaleTimeString();
+                    setTimeout(() => loading.value = false, 500);
+                };
 
-                    const convert = (src) => {
-                        const JPY_TWD = 0.211, AUD_TWD = 20.85;
-                        if (src === 'jpy') {
-                            currency.twd = Math.round(currency.jpy * JPY_TWD);
-                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                        } else if (src === 'twd') {
-                            currency.jpy = Math.round(currency.twd / JPY_TWD);
-                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                        } else if (src === 'aud') {
-                            currency.twd = Math.round(currency.aud * AUD_TWD);
-                            currency.jpy = Math.round(currency.twd / JPY_TWD);
-                        }
-                        save();
-                    };
+                const loadData = () => {
+                    const local = localStorage.getItem('tokyo_itinerary_backup');
+                    if (local) {
+                        const parsed = JSON.parse(local);
+                        itineraries.value = parsed.itineraries;
+                        Object.assign(currency, parsed.currency);
+                    }
+                };
 
-                    const addEvent = async () => {
-                        const dayIdx = currentDay.value - 1;
-                        itineraries.value[dayIdx].events.push({
-                            time: { zh: form.time || '待定', en: form.time || 'TBD' },
-                            location: { zh: form.location, en: form.location },
-                            desc: { zh: form.desc || '-', en: form.desc || '-' }
-                        });
-                        showModal.value = false;
-                        Object.assign(form, { time: '', location: '', desc: '' });
-                        await save();
-                    };
+                const convert = (src) => {
+                    const JPY_TWD = 0.211, AUD_TWD = 20.85;
+                    if (src === 'jpy') { currency.twd = Math.round(currency.jpy * JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
+                    else if (src === 'twd') { currency.jpy = Math.round(currency.twd / JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
+                    else if (src === 'aud') { currency.twd = Math.round(currency.aud * AUD_TWD); currency.jpy = Math.round(currency.twd / JPY_TWD); }
+                    save();
+                };
 
-                    const removeEvent = async (idx) => {
-                        itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                        await save();
-                    };
-
-                    onMounted(() => {
-                        // 1. 櫻花動畫
-                        const bg = document.getElementById('sakura-bg');
-                        for(let i=0; i<20; i++) {
-                            const p = document.createElement('div');
-                            p.className = 'petal';
-                            p.style.left = Math.random() * 100 + 'vw';
-                            p.style.width = p.style.height = (Math.random() * 10 + 5) + 'px';
-                            p.style.animationDuration = (Math.random() * 5 + 5) + 's';
-                            p.style.animationDelay = (Math.random() * 5) + 's';
-                            bg.appendChild(p);
-                        }
-
-                        // 2. 實時監聽
-                        const docRef = getDocRef();
-                        docRef.onSnapshot((doc) => {
-                            if (doc.exists) {
-                                const data = doc.data();
-                                if (data.itineraries) itineraries.value = data.itineraries;
-                                if (data.currency) Object.assign(currency, data.currency);
-                            }
-                            // 隱藏載入畫面
-                            const loader = document.getElementById('boot-loader');
-                            if(loader) loader.style.opacity = '0';
-                            setTimeout(() => { if(loader) loader.style.display = 'none'; }, 500);
-                        }, (err) => {
-                            console.error("Sync Error:", err);
-                        });
+                const addEvent = () => {
+                    itineraries.value[currentDay.value - 1].events.push({
+                        time: { zh: form.time || '待定', en: form.time || 'TBD' },
+                        location: { zh: form.location, en: form.location },
+                        desc: { zh: form.desc || '-', en: form.desc || '-' }
                     });
+                    showModal.value = false;
+                    Object.assign(form, { time: '', location: '', desc: '' });
+                    save();
+                };
 
-                    return { 
-                        currentDay, lang, loading, user, itineraries, currency, 
-                        showModal, form, convert, addEvent, removeEvent, save,
-                        toggleLang: () => lang.value = lang.value === 'zh' ? 'en' : 'zh'
-                    };
-                }
-            }).mount('#app');
-        }
+                const removeEvent = (idx) => {
+                    itineraries.value[currentDay.value - 1].events.splice(idx, 1);
+                    save();
+                };
 
-        // 啟動
-        window.onload = bootstrap;
+                onMounted(() => {
+                    loadData();
+                    // 櫻花特效
+                    const bg = document.getElementById('app');
+                    for(let i=0; i<10; i++) {
+                        const p = document.createElement('div');
+                        p.className = 'petal';
+                        p.style.left = Math.random() * 100 + 'vw';
+                        p.style.animationDuration = (Math.random() * 5 + 5) + 's';
+                        document.body.appendChild(p);
+                    }
+                });
+
+                return { currentDay, lang, loading, itineraries, currency, showModal, form, storageMode, lastSaved, convert, addEvent, removeEvent };
+            }
+        }).mount('#app');
     </script>
 </body>
 </html>
