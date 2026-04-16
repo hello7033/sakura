@@ -174,12 +174,15 @@
     <script>
         // 初始化全域變數
         let auth, db;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-travel-final';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tokyo-travel-stable-v2';
 
         async function startApp() {
             const bootText = document.getElementById('boot-text');
             try {
-                if (typeof firebase === 'undefined') throw new Error("Firebase 腳本未就緒");
+                if (typeof firebase === 'undefined') {
+                    bootText.innerText = "LOADING SCRIPTS...";
+                    return setTimeout(startApp, 500);
+                }
 
                 if (!firebase.apps.length) {
                     const config = JSON.parse(__firebase_config || '{}');
@@ -189,19 +192,18 @@
                 auth = firebase.auth();
                 db = firebase.firestore();
                 
-                // 1. 強制執行登入並等待結果
-                bootText.innerText = "AUTHENTICATING...";
+                // 強制執行登入
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await auth.signInWithCustomToken(__initial_auth_token);
                 } else {
                     await auth.signInAnonymously();
                 }
 
-                bootText.innerText = "VUE READY...";
                 initVue();
             } catch (e) {
                 console.error("啟動失敗:", e);
-                bootText.innerText = "SYSTEM ERROR";
+                bootText.innerText = "RETRYING CONNECTION...";
+                setTimeout(startApp, 1000);
             }
         }
 
@@ -220,130 +222,4 @@
 
                     const itineraries = ref([
                         { title: { zh: '第一天：抵達與漫步', en: 'Day 1: Arrival' }, events: [] },
-                        { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: [] },
-                        { title: { zh: '第三天：奇幻迪士尼', en: 'Day 3: Disney Magic' }, events: [] },
-                        { title: { zh: '第四天：潮流原宿', en: 'Day 4: Harajuku Vibe' }, events: [] },
-                        { title: { zh: '第五天：賦歸回憶', en: 'Day 5: Departure' }, events: [] }
-                    ]);
-
-                    // 取得同步路徑
-                    const getDocRef = () => {
-                        const uid = auth.currentUser?.uid;
-                        if (!uid) return null;
-                        return db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('itinerary');
-                    };
-
-                    // 強化的同步儲存函式
-                    const save = async () => {
-                        const docRef = getDocRef();
-                        if (!docRef) return;
-                        
-                        loading.value = true;
-                        try {
-                            // 使用 JSON 序列化確保 Proxy 物件被轉換為普通物件
-                            const cleanData = JSON.parse(JSON.stringify({
-                                itineraries: itineraries.value,
-                                currency: currency,
-                                updatedAt: Date.now()
-                            }));
-                            
-                            await docRef.set(cleanData);
-                        } catch (e) {
-                            console.error("雲端存儲失敗:", e);
-                        } finally {
-                            loading.value = false;
-                        }
-                    };
-
-                    const convert = (src) => {
-                        const JPY_TWD = 0.211, AUD_TWD = 20.85;
-                        if (src === 'jpy') {
-                            currency.twd = Math.round(currency.jpy * JPY_TWD);
-                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                        } else if (src === 'twd') {
-                            currency.jpy = Math.round(currency.twd / JPY_TWD);
-                            currency.aud = (currency.twd / AUD_TWD).toFixed(2);
-                        } else if (src === 'aud') {
-                            currency.twd = Math.round(currency.aud * AUD_TWD);
-                            currency.jpy = Math.round(currency.twd / JPY_TWD);
-                        }
-                        save();
-                    };
-
-                    const addEvent = async () => {
-                        const dayIdx = currentDay.value - 1;
-                        itineraries.value[dayIdx].events.push({
-                            time: { zh: form.time || '待定', en: form.time || 'TBD' },
-                            location: { zh: form.location, en: form.location },
-                            desc: { zh: form.desc || '-', en: form.desc || '-' }
-                        });
-                        showModal.value = false;
-                        form.time = ''; form.location = ''; form.desc = '';
-                        await save();
-                    };
-
-                    const removeEvent = async (idx) => {
-                        itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                        await save();
-                    };
-
-                    const startSakura = () => {
-                        const container = document.getElementById('sakura-bg');
-                        if (!container) return;
-                        for(let i=0; i<25; i++) {
-                            const p = document.createElement('div');
-                            p.className = 'petal';
-                            const size = Math.random() * 8 + 8 + 'px';
-                            p.style.width = size; p.style.height = size;
-                            p.style.left = Math.random() * 100 + 'vw';
-                            p.style.animationDuration = Math.random() * 5 + 5 + 's';
-                            p.style.animationDelay = Math.random() * 5 + 's';
-                            container.appendChild(p);
-                        }
-                    };
-
-                    onMounted(async () => {
-                        startSakura();
-                        
-                        // 2. 監聽登入並立即加載資料
-                        auth.onAuthStateChanged((currentUser) => {
-                            if (currentUser) {
-                                user.value = currentUser;
-                                const docRef = getDocRef();
-                                
-                                // 開啟實時監聽
-                                docRef.onSnapshot((doc) => {
-                                    if (doc.exists) {
-                                        const data = doc.data();
-                                        if (data.itineraries) itineraries.value = data.itineraries;
-                                        if (data.currency) Object.assign(currency, data.currency);
-                                    } else {
-                                        // 沒資料時嘗試初始化一次
-                                        save();
-                                    }
-                                    loading.value = false;
-                                    const loader = document.getElementById('boot-loader');
-                                    if(loader) loader.style.display = 'none';
-                                }, (err) => {
-                                    console.error("監聽失敗:", err);
-                                    loading.value = false;
-                                    document.getElementById('boot-loader').style.display = 'none';
-                                });
-                            }
-                        });
-                    });
-
-                    return { 
-                        currentDay, lang, loading, user, itineraries, currency, 
-                        showModal, form, convert, addEvent, removeEvent,
-                        toggleLang: () => lang.value = lang.value === 'zh' ? 'en' : 'zh'
-                    };
-                }
-            }).mount('#app');
-        }
-
-        // 啟動流程
-        window.addEventListener('load', startApp);
-    </script>
-</body>
-</html>
+                        { title: { zh: '第二天：櫻之盛宴', en: 'Day 2: Sakura Bliss' }, events: []
