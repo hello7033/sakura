@@ -155,17 +155,14 @@
 
         createApp({
             setup() {
-                // 更安全的環境變數獲取方式
-                const getEnvVar = (name) => {
-                    try {
-                        return window[name];
-                    } catch (e) {
-                        return undefined;
-                    }
+                // 安全讀取環境變數
+                const getSafeVar = (name) => {
+                    if (typeof window[name] !== 'undefined') return window[name];
+                    return null;
                 };
 
-                const appId = getEnvVar('__app_id') || 'shared-tokyo-2026';
-                const firebaseConfigStr = getEnvVar('__firebase_config');
+                const appId = getSafeVar('__app_id') || 'shared-tokyo-2026';
+                const firebaseConfigStr = getSafeVar('__firebase_config');
                 const hasFirebaseConfig = !!firebaseConfigStr;
                 
                 const currentDay = ref(1);
@@ -183,32 +180,33 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                const getSharedDoc = () => {
+                // 修正路徑結構：artifacts/{appId}/public/data/{collectionName}
+                const getDocRef = () => {
                     return firebase.firestore()
                         .collection('artifacts')
                         .doc(appId)
                         .collection('public')
                         .doc('data')
-                        .collection('shared_itinerary')
-                        .doc('global_config');
+                        .collection('shared_configs')
+                        .doc('main');
                 };
 
-                const save = async () => {
+                const saveToCloud = async () => {
                     if (!hasFirebaseConfig) return;
                     loading.value = true;
                     try {
-                        const data = JSON.parse(JSON.stringify({
+                        const payload = JSON.parse(JSON.stringify({
                             itineraries: toRaw(itineraries.value),
                             currency: toRaw(currency),
-                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
                         }));
-                        await getSharedDoc().set(data);
-                        syncStatus.value = 'Active';
+                        await getDocRef().set(payload, { merge: true });
+                        syncStatus.value = 'Synced';
                     } catch (e) {
-                        console.error("Save Error:", e);
-                        syncStatus.value = 'Error';
+                        console.error("Cloud Save Error:", e);
+                        syncStatus.value = 'Sync Error';
                     } finally {
-                        setTimeout(() => loading.value = false, 500);
+                        setTimeout(() => loading.value = false, 300);
                     }
                 };
 
@@ -217,7 +215,7 @@
                     if (src === 'jpy') { currency.twd = Math.round(currency.jpy * JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
                     else if (src === 'twd') { currency.jpy = Math.round(currency.twd / JPY_TWD); currency.aud = (currency.twd / AUD_TWD).toFixed(2); }
                     else if (src === 'aud') { currency.twd = Math.round(currency.aud * AUD_TWD); currency.jpy = Math.round(currency.twd / JPY_TWD); }
-                    save();
+                    saveToCloud();
                 };
 
                 const addEvent = async () => {
@@ -228,70 +226,79 @@
                     });
                     showModal.value = false;
                     Object.assign(form, { time: '', location: '', desc: '' });
-                    if (hasFirebaseConfig) await save();
+                    await saveToCloud();
                 };
 
                 const removeEvent = async (idx) => {
                     itineraries.value[currentDay.value - 1].events.splice(idx, 1);
-                    if (hasFirebaseConfig) await save();
+                    await saveToCloud();
                 };
 
                 onMounted(async () => {
-                    if (!hasFirebaseConfig) {
-                        syncStatus.value = 'Local Mode';
-                        loading.value = false;
-                        const loader = document.getElementById('app-loader');
-                        if (loader) loader.style.display = 'none';
-                        return;
-                    }
-
-                    try {
-                        if (!firebase.apps.length) {
-                            firebase.initializeApp(JSON.parse(firebaseConfigStr));
-                        }
-                        
-                        const auth = firebase.auth();
-                        const initialToken = getEnvVar('__initial_auth_token');
-                        if (initialToken) {
-                            await auth.signInWithCustomToken(initialToken);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                        
-                        syncStatus.value = 'Connected';
-
-                        getSharedDoc().onSnapshot((doc) => {
-                            if (doc.exists) {
-                                const data = doc.data();
-                                itineraries.value = data.itineraries || itineraries.value;
-                                if(data.currency) Object.assign(currency, data.currency);
-                            } else {
-                                save();
-                            }
-                            loading.value = false;
-                            syncStatus.value = 'Active';
-                            const loader = document.getElementById('app-loader');
-                            if (loader) loader.style.display = 'none';
-                        }, (err) => {
-                            console.error("Sync Error:", err);
-                            syncStatus.value = 'Sync Paused';
-                        });
-
-                    } catch (e) {
-                        console.error("Init Error:", e);
-                        syncStatus.value = 'Offline';
-                        loading.value = false;
-                        const loader = document.getElementById('app-loader');
-                        if (loader) loader.style.display = 'none';
-                    }
-
-                    // 櫻花裝飾
+                    // 初始化特效
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
                         p.style.left = Math.random() * 100 + 'vw';
                         p.style.animationDuration = (Math.random() * 5 + 5) + 's';
                         document.body.appendChild(p);
+                    }
+
+                    if (!hasFirebaseConfig) {
+                        syncStatus.value = 'Offline Mode';
+                        loading.value = false;
+                        document.getElementById('app-loader').style.display = 'none';
+                        return;
+                    }
+
+                    try {
+                        // 1. 初始化 Firebase
+                        if (!firebase.apps.length) {
+                            firebase.initializeApp(JSON.parse(firebaseConfigStr));
+                        }
+
+                        // 2. 身份驗證 (Firestore 必須登入)
+                        const auth = firebase.auth();
+                        const token = getSafeVar('__initial_auth_token');
+                        if (token) {
+                            await auth.signInWithCustomToken(token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                        
+                        syncStatus.value = 'Cloud Connected';
+
+                        // 3. 監聽數據
+                        getDocRef().onSnapshot((doc) => {
+                            if (doc.exists) {
+                                const cloudData = doc.data();
+                                // 更新本地響應式數據
+                                if (cloudData.itineraries) {
+                                    itineraries.value = cloudData.itineraries;
+                                }
+                                if (cloudData.currency) {
+                                    Object.assign(currency, cloudData.currency);
+                                }
+                            } else {
+                                // 雲端無資料時，先上傳一次目前的預設資料
+                                saveToCloud();
+                            }
+                            
+                            loading.value = false;
+                            syncStatus.value = 'Active';
+                            document.getElementById('app-loader').style.display = 'none';
+                        }, (error) => {
+                            console.error("Firestore Listen Error:", error);
+                            syncStatus.value = 'Sync Interrupted';
+                            loading.value = false;
+                            document.getElementById('app-loader').style.display = 'none';
+                        });
+
+                    } catch (err) {
+                        console.error("Cloud Initialization Failed:", err);
+                        syncStatus.value = 'Cloud Error';
+                        loading.value = false;
+                        document.getElementById('app-loader').style.display = 'none';
                     }
                 });
 
