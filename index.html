@@ -97,7 +97,7 @@
                         <input type="number" v-model.number="currency.twd" @input="convert('twd')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[9px] font-bold text-slate-400 uppercase ml-1">AUD 澳幣</label>
+                        <label class="text-[9px] font-bold text-soft-pink uppercase ml-1">AUD 澳幣</label>
                         <input type="number" v-model.number="currency.aud" @input="convert('aud')" class="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                     </div>
                 </div>
@@ -155,9 +155,18 @@
 
         createApp({
             setup() {
-                // 安全地取得環境變數，避免未定義錯誤
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'shared-tokyo-2026';
-                const hasFirebaseConfig = typeof __firebase_config !== 'undefined';
+                // 更安全的環境變數獲取方式
+                const getEnvVar = (name) => {
+                    try {
+                        return window[name];
+                    } catch (e) {
+                        return undefined;
+                    }
+                };
+
+                const appId = getEnvVar('__app_id') || 'shared-tokyo-2026';
+                const firebaseConfigStr = getEnvVar('__firebase_config');
+                const hasFirebaseConfig = !!firebaseConfigStr;
                 
                 const currentDay = ref(1);
                 const lang = ref('zh');
@@ -231,18 +240,20 @@
                     if (!hasFirebaseConfig) {
                         syncStatus.value = 'Local Mode';
                         loading.value = false;
-                        document.getElementById('app-loader').style.display = 'none';
+                        const loader = document.getElementById('app-loader');
+                        if (loader) loader.style.display = 'none';
                         return;
                     }
 
                     try {
                         if (!firebase.apps.length) {
-                            firebase.initializeApp(JSON.parse(__firebase_config));
+                            firebase.initializeApp(JSON.parse(firebaseConfigStr));
                         }
                         
                         const auth = firebase.auth();
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
+                        const initialToken = getEnvVar('__initial_auth_token');
+                        if (initialToken) {
+                            await auth.signInWithCustomToken(initialToken);
                         } else {
                             await auth.signInAnonymously();
                         }
@@ -263,16 +274,18 @@
                             if (loader) loader.style.display = 'none';
                         }, (err) => {
                             console.error("Sync Error:", err);
-                            syncStatus.value = 'Permission Denied';
+                            syncStatus.value = 'Sync Paused';
                         });
 
                     } catch (e) {
                         console.error("Init Error:", e);
                         syncStatus.value = 'Offline';
                         loading.value = false;
-                        document.getElementById('app-loader').style.display = 'none';
+                        const loader = document.getElementById('app-loader');
+                        if (loader) loader.style.display = 'none';
                     }
 
+                    // 櫻花裝飾
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
