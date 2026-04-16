@@ -159,7 +159,7 @@
                     try { return window[name]; } catch(e) { return null; }
                 };
 
-                const appId = getSafeVar('__app_id') || 'shared-tokyo-v1';
+                const appId = getSafeVar('__app_id') || 'shared-tokyo-final';
                 const firebaseConfigStr = getSafeVar('__firebase_config');
                 
                 const currentDay = ref(1);
@@ -167,7 +167,9 @@
                 const loading = ref(true);
                 const syncStatus = ref('Starting...');
                 const showModal = ref(false);
-                const isFirstLoad = ref(true); // 用於防止初次監聽反向覆蓋
+                
+                // 關鍵控制變數：確保雲端資料載入後才允許寫入
+                const cloudLoaded = ref(false); 
                 
                 const currency = reactive({ jpy: 10000, twd: 2100, aud: 100.50 });
                 const form = reactive({ time: '', location: '', desc: '' });
@@ -186,24 +188,26 @@
                         .doc(appId)
                         .collection('public')
                         .doc('data')
-                        .collection('travel_plans')
-                        .doc('tokyo2026');
+                        .collection('itinerary_v2')
+                        .doc('main_data');
                 };
 
                 const saveToCloud = async () => {
-                    if (!firebaseConfigStr || isFirstLoad.value) return;
+                    // 如果雲端還沒載入成功，絕對不允許寫入（避免覆蓋掉現有行程）
+                    if (!firebaseConfigStr || !cloudLoaded.value) return;
+                    
                     loading.value = true;
                     try {
                         const payload = JSON.parse(JSON.stringify({
                             itineraries: toRaw(itineraries.value),
                             currency: toRaw(currency),
-                            ts: firebase.firestore.FieldValue.serverTimestamp()
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                         }));
                         await getDocRef().set(payload, { merge: true });
-                        syncStatus.value = 'Cloud Saved';
+                        syncStatus.value = 'Synced';
                     } catch (e) {
-                        console.error("Cloud Save Failed:", e);
-                        syncStatus.value = 'Sync Failed';
+                        console.error("Cloud Save Error:", e);
+                        syncStatus.value = 'Offline Save';
                     } finally {
                         setTimeout(() => loading.value = false, 500);
                     }
@@ -225,6 +229,7 @@
                     });
                     showModal.value = false;
                     Object.assign(form, { time: '', location: '', desc: '' });
+                    // 這裡會觸發 saveToCloud
                     await saveToCloud();
                 };
 
@@ -234,7 +239,7 @@
                 };
 
                 onMounted(async () => {
-                    // 初始化特效
+                    // 初始化櫻花特效
                     for(let i=0; i<15; i++) {
                         const p = document.createElement('div');
                         p.className = 'petal';
@@ -244,55 +249,59 @@
                     }
 
                     if (!firebaseConfigStr) {
-                        syncStatus.value = 'No Config - Local Only';
+                        syncStatus.value = 'Local Only';
                         loading.value = false;
                         document.getElementById('app-loader').style.display = 'none';
                         return;
                     }
 
                     try {
-                        // 1. 初始化
                         if (!firebase.apps.length) {
                             firebase.initializeApp(JSON.parse(firebaseConfigStr));
                         }
 
-                        // 2. 登入（這步最關鍵，沒登入不能讀寫）
                         const auth = firebase.auth();
                         const token = getSafeVar('__initial_auth_token');
+                        
+                        // 確保登入程序完整完成
                         if (token) {
                             await auth.signInWithCustomToken(token);
                         } else {
                             await auth.signInAnonymously();
                         }
                         
-                        syncStatus.value = 'Authenticated';
+                        syncStatus.value = 'Connecting...';
 
-                        // 3. 監聽與初次讀取
+                        // 核心：先監聽雲端資料
                         getDocRef().onSnapshot((doc) => {
                             if (doc.exists) {
                                 const data = doc.data();
-                                // 只有當資料存在時才更新本地，防止清空
-                                if (data.itineraries) itineraries.value = data.itineraries;
-                                if (data.currency) Object.assign(currency, data.currency);
-                                syncStatus.value = 'Cloud Active';
+                                if (data.itineraries) {
+                                    itineraries.value = data.itineraries;
+                                }
+                                if (data.currency) {
+                                    Object.assign(currency, data.currency);
+                                }
+                                syncStatus.value = 'Active';
+                                cloudLoaded.value = true; // 資料成功從雲端抓回，解鎖寫入權限
                             } else {
-                                // 第一次使用，上傳預設值
-                                isFirstLoad.value = false;
+                                // 文檔不存在，說明是全新的，現在可以解鎖寫入並初始上傳一份
+                                cloudLoaded.value = true;
                                 saveToCloud();
                             }
                             
-                            isFirstLoad.value = false;
                             loading.value = false;
                             document.getElementById('app-loader').style.display = 'none';
                         }, (err) => {
                             console.error("Firestore error:", err);
-                            syncStatus.value = 'Connection Error';
+                            syncStatus.value = 'Sync Error';
+                            // 即使失敗也關閉載入圖標
+                            document.getElementById('app-loader').style.display = 'none';
                         });
 
                     } catch (err) {
-                        console.error("Firebase Init Error:", err);
-                        syncStatus.value = 'Init Error';
-                        loading.value = false;
+                        console.error("Init Error:", err);
+                        syncStatus.value = 'Init Fail';
                         document.getElementById('app-loader').style.display = 'none';
                     }
                 });
