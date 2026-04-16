@@ -75,11 +75,11 @@
         <main class="px-6 -mt-6 space-y-6">
             <!-- 雲端狀態顯示欄位 -->
             <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
-                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <i class="fa-solid fa-circle mr-1" :class="cloudLoaded ? 'text-green-400' : 'text-orange-400 animate-ping'"></i> 
-                    Cloud: <span :class="cloudLoaded ? 'text-slate-600' : 'text-orange-400'">{{ syncStatus }}</span>
+                <div class="text-[10px] font-bold uppercase tracking-widest">
+                    <i class="fa-solid fa-circle mr-1" :class="syncStatus === 'LIVE' ? 'text-green-400' : (syncStatus === 'OFFLINE' ? 'text-red-400' : 'text-orange-400 animate-ping')"></i> 
+                    Cloud: <span :class="syncStatus === 'LIVE' ? 'text-slate-600' : 'text-red-400'">{{ syncStatus }}</span>
                 </div>
-                <div class="text-[8px] text-slate-300">STABLE V11 | AUTO-RESUME</div>
+                <div class="text-[8px] text-slate-300">V12 | LOCAL-PERSISTENCE</div>
             </section>
 
             <!-- 匯率計算機 -->
@@ -145,17 +145,17 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, onMounted, toRaw } = Vue;
+        const { createApp, ref, reactive, onMounted, toRaw, watch } = Vue;
 
         createApp({
             setup() {
-                const GLOBAL_PATH = 'stable-tokyo-v11'; 
-                const CACHE_KEY = 'tokyo_v11_local';
+                const GLOBAL_PATH = 'stable-tokyo-v12'; 
+                const CACHE_KEY = 'tokyo_v12_local';
 
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(false);
-                const syncStatus = ref('CONNECTING...');
+                const syncStatus = ref('INIT...');
                 const showModal = ref(false);
                 const cloudLoaded = ref(false); 
                 const lastSyncTs = ref(0);
@@ -170,13 +170,27 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
+                // 核心：本地持久化保存，即使沒有雲端也不會消失
+                const writeCache = () => {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify({
+                        itineraries: toRaw(itineraries.value),
+                        currency: toRaw(currency),
+                        ts: lastSyncTs.value
+                    }));
+                };
+
+                // 深度監聽所有資料變動，一旦變動就存入 localStorage
+                watch([itineraries, currency], () => {
+                    writeCache();
+                }, { deep: true });
+
                 const hideLoader = () => {
                     const loader = document.getElementById('app-loader');
                     if (loader) loader.style.opacity = '0';
                     setTimeout(() => { if (loader) loader.style.display = 'none'; }, 500);
                 };
 
-                const loadCache = () => {
+                const loadFromCache = () => {
                     const saved = localStorage.getItem(CACHE_KEY);
                     if (saved) {
                         try {
@@ -184,40 +198,34 @@
                             itineraries.value = parsed.itineraries || itineraries.value;
                             Object.assign(currency, parsed.currency || currency);
                             lastSyncTs.value = parsed.ts || 0;
-                        } catch(e) {}
+                        } catch(e) { console.error("Cache parse error", e); }
                     }
                 };
 
-                const writeCache = (ts) => {
-                    localStorage.setItem(CACHE_KEY, JSON.stringify({
-                        itineraries: toRaw(itineraries.value),
-                        currency: toRaw(currency),
-                        ts: ts || lastSyncTs.value
-                    }));
-                };
-
                 const getDocRef = () => {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tokyo-v11';
-                    return firebase.firestore().doc(`artifacts/${appId}/public/data/${GLOBAL_PATH}`);
+                    try {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-tokyo-v12';
+                        return firebase.firestore().doc(`artifacts/${appId}/public/data/${GLOBAL_PATH}`);
+                    } catch(e) { return null; }
                 };
 
                 const syncToCloud = async () => {
-                    // 只有在雲端確認過的狀態下才上傳
-                    if (!cloudLoaded.value) return;
+                    const docRef = getDocRef();
+                    if (!docRef || !cloudLoaded.value) return;
+                    
                     loading.value = true;
                     const ts = Date.now();
                     try {
-                        await getDocRef().set({
+                        await docRef.set({
                             itineraries: toRaw(itineraries.value),
                             currency: toRaw(currency),
                             ts: ts
                         }, { merge: true });
                         lastSyncTs.value = ts;
-                        writeCache(ts);
                         syncStatus.value = 'LIVE';
                     } catch (e) {
-                        syncStatus.value = 'SYNC ERROR';
-                        console.error("Upload error", e);
+                        console.error("Cloud upload failed", e);
+                        syncStatus.value = 'OFFLINE';
                     } finally {
                         setTimeout(() => loading.value = false, 500);
                     }
@@ -248,20 +256,96 @@
                 };
 
                 const startListening = () => {
-                    const statusEl = document.getElementById('loader-status');
-                    if (statusEl) statusEl.innerText = 'Syncing Cloud Data...';
-                    
-                    // 設定超時保護：如果 3 秒內沒收到 Cloud 回應，強制解鎖介面
+                    const docRef = getDocRef();
+                    if (!docRef) {
+                        syncStatus.value = 'OFFLINE';
+                        hideLoader();
+                        return;
+                    }
+
+                    // 設定超時保護：3秒沒連上就直接開門讓用戶使用本地資料
                     const timeoutTrigger = setTimeout(() => {
                         if (!cloudLoaded.value) {
-                            console.warn("Cloud connection slow, entering local-first mode");
                             cloudLoaded.value = true;
-                            syncStatus.value = 'LOCAL-ONLY (RETRYING)';
+                            syncStatus.value = 'OFFLINE';
                             hideLoader();
                         }
-                    }, 3500);
+                    }, 3000);
 
-                    const unsubscribe = getDocRef().onSnapshot({ includeMetadataChanges: true }, (doc) => {
+                    docRef.onSnapshot((doc) => {
                         clearTimeout(timeoutTrigger);
                         if (doc.exists) {
-                            const data = doc
+                            const data = doc.data();
+                            const cloudTs = data.ts || 0;
+                            // 只有雲端比較新時才覆蓋本地
+                            if (cloudTs > lastSyncTs.value) {
+                                itineraries.value = data.itineraries || itineraries.value;
+                                Object.assign(currency, data.currency || currency);
+                                lastSyncTs.value = cloudTs;
+                            }
+                        } else {
+                            // 雲端無資料，推目前本地上去
+                            cloudLoaded.value = true;
+                            syncToCloud();
+                        }
+                        cloudLoaded.value = true;
+                        syncStatus.value = 'LIVE';
+                        hideLoader();
+                    }, (err) => {
+                        console.error("Sync listener error", err);
+                        syncStatus.value = 'OFFLINE';
+                        cloudLoaded.value = true; // 即使出錯也讓用戶進入本地模式
+                        hideLoader();
+                    });
+                };
+
+                const initAuth = async () => {
+                    try {
+                        // 嘗試從全域變數讀取配置
+                        const configStr = window.__firebase_config || localStorage.getItem('__fb_cfg_backup');
+                        if (!configStr) throw new Error("No Config Found");
+                        
+                        const config = JSON.parse(configStr);
+                        if (!firebase.apps.length) firebase.initializeApp(config);
+                        
+                        // 備份配置以便下次使用
+                        localStorage.setItem('__fb_cfg_backup', configStr);
+
+                        const auth = firebase.auth();
+                        
+                        // 驗證流程
+                        if (window.__initial_auth_token) {
+                            await auth.signInWithCustomToken(window.__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                        
+                        startListening();
+                    } catch (e) {
+                        console.error("Auth Init Failed", e);
+                        syncStatus.value = 'OFFLINE';
+                        cloudLoaded.value = true;
+                        hideLoader();
+                    }
+                };
+
+                onMounted(() => {
+                    loadFromCache(); // 優先載入上次存好的資料
+                    initAuth();
+                    
+                    // 裝飾用櫻花
+                    for(let i=0; i<8; i++) {
+                        const p = document.createElement('div');
+                        p.className = 'petal';
+                        p.style.left = Math.random() * 100 + 'vw';
+                        p.style.animationDuration = (Math.random() * 5 + 5) + 's';
+                        document.body.appendChild(p);
+                    }
+                });
+
+                return { currentDay, lang, loading, itineraries, currency, showModal, form, removeEvent, addEvent, convert, syncStatus, cloudLoaded };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
