@@ -74,9 +74,9 @@
             <section class="glass-panel p-4 rounded-[1.5rem] shadow-sm flex items-center justify-between">
                 <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     <i class="fa-solid fa-cloud mr-1"></i> Status: 
-                    <span :class="cloudLoaded ? 'text-green-400' : 'text-orange-400'">{{ cloudLoaded ? 'LIVE' : 'CONNECTING...' }}</span>
+                    <span :class="cloudLoaded ? 'text-green-400' : 'text-orange-400 animate-pulse'">{{ cloudLoaded ? 'LIVE' : 'CONNECTING...' }}</span>
                 </div>
-                <div class="text-[8px] text-slate-300">V7 PERSIST | {{ syncStatus }}</div>
+                <div class="text-[8px] text-slate-300">V8 PERSIST | {{ syncStatus }}</div>
             </section>
 
             <!-- 匯率計算機 -->
@@ -142,17 +142,18 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, onMounted, toRaw, watch } = Vue;
+        const { createApp, ref, reactive, onMounted, toRaw } = Vue;
 
         createApp({
             setup() {
-                const APP_ID = 'tokyo-persistent-v7'; 
-                const CACHE_KEY = 'tokyo_v7_cache';
+                // 強制使用單一路徑，確保所有裝置抓到同一份資料
+                const APP_ID = 'tokyo-2026-global-sync'; 
+                const CACHE_KEY = 'tokyo_v8_local';
 
                 const currentDay = ref(1);
                 const lang = ref('zh');
                 const loading = ref(false);
-                const syncStatus = ref('Standby');
+                const syncStatus = ref('Starting...');
                 const showModal = ref(false);
                 const cloudLoaded = ref(false); 
                 const lastSyncTs = ref(0);
@@ -167,7 +168,7 @@
                     { title: { zh: '第五天', en: 'Day 5' }, events: [] }
                 ]);
 
-                // 強大的本地載入邏輯：第一時間保命
+                // 本機備份邏輯
                 const loadCache = () => {
                     const saved = localStorage.getItem(CACHE_KEY);
                     if (saved) {
@@ -176,8 +177,8 @@
                             itineraries.value = parsed.itineraries;
                             Object.assign(currency, parsed.currency);
                             lastSyncTs.value = parsed.ts || 0;
-                            syncStatus.value = 'Local Active';
-                        } catch(e) { console.error("Cache corrupted"); }
+                            syncStatus.value = 'Local Cached';
+                        } catch(e) { console.error("Cache fail"); }
                     }
                 };
 
@@ -191,10 +192,11 @@
                     lastSyncTs.value = now;
                 };
 
-                const getDocRef = () => firebase.firestore().collection('artifacts').doc(APP_ID).collection('public').doc('itinerary_data');
+                // Firestore 資料路徑
+                const getDocRef = () => firebase.firestore().doc(`artifacts/${APP_ID}/public/data/itinerary_final`);
 
                 const syncToCloud = async () => {
-                    // 關鍵防護：如果雲端還沒連上過，絕對不能把本地目前的空值或舊值推上去
+                    // 如果尚未成功連上雲端，僅存於本地，避免空資料蓋掉伺服器
                     if (!cloudLoaded.value) {
                         writeCache();
                         return;
@@ -210,11 +212,12 @@
                             currency: toRaw(currency),
                             ts: ts
                         }, { merge: true });
-                        syncStatus.value = 'Cloud Updated';
+                        syncStatus.value = 'Cloud Saved';
                     } catch (e) {
-                        syncStatus.value = 'Sync Interrupted';
+                        syncStatus.value = 'Offline (Auto-save)';
+                        console.error("Write error:", e);
                     } finally {
-                        setTimeout(() => loading.value = false, 500);
+                        setTimeout(() => loading.value = false, 800);
                     }
                 };
 
@@ -242,61 +245,77 @@
                     syncToCloud();
                 };
 
-                const initializeFirebase = async () => {
-                    try {
-                        const config = window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
-                        if (!config) throw new Error("Environment Error");
-
-                        if (!firebase.apps.length) firebase.initializeApp(config);
-                        
-                        const auth = firebase.auth();
-                        const token = window.__initial_auth_token;
-                        if (token) await auth.signInWithCustomToken(token); else await auth.signInAnonymously();
-
-                        // 設置即時監聽器
-                        getDocRef().onSnapshot((doc) => {
-                            if (doc.exists) {
-                                const cloudData = doc.data();
-                                const cloudTs = cloudData.ts || 0;
-                                
-                                // 時間戳比對：雲端必須大於本地才採納
-                                if (cloudTs >= lastSyncTs.value) {
-                                    itineraries.value = cloudData.itineraries || itineraries.value;
-                                    Object.assign(currency, cloudData.currency || currency);
-                                    lastSyncTs.value = cloudTs;
-                                    writeCache(cloudTs);
-                                    syncStatus.value = 'Cloud Live';
-                                } else {
-                                    // 本地較新，強制覆蓋雲端
-                                    cloudLoaded.value = true;
-                                    syncStatus.value = 'Local Leading';
-                                    syncToCloud();
-                                }
-                            } else {
-                                // 雲端尚無資料，以本地為主進行初始化
-                                syncStatus.value = 'New Cloud Initialized';
+                // 核心同步邏輯
+                const setupSyncListener = () => {
+                    syncStatus.value = 'Connecting...';
+                    
+                    const unsubscribe = getDocRef().onSnapshot((doc) => {
+                        if (doc.exists) {
+                            const cloudData = doc.data();
+                            const cloudTs = cloudData.ts || 0;
+                            
+                            // 權威比對：誰的時間戳(ts)大，就聽誰的
+                            if (cloudTs > lastSyncTs.value) {
+                                itineraries.value = cloudData.itineraries || itineraries.value;
+                                Object.assign(currency, cloudData.currency || currency);
+                                lastSyncTs.value = cloudTs;
+                                writeCache(cloudTs);
+                                syncStatus.value = 'Cloud Live';
+                            } else if (cloudTs < lastSyncTs.value) {
+                                // 如果本地比較新（例如剛剛新增完但還沒推上去）
                                 cloudLoaded.value = true;
                                 syncToCloud();
+                            } else {
+                                syncStatus.value = 'Cloud Live';
                             }
-                            
+                        } else {
+                            // 雲端是空的，初始化
                             cloudLoaded.value = true;
-                            document.getElementById('app-loader').style.display = 'none';
-                        }, (err) => {
-                            console.error("Firestore error, switching to Local-Only:", err);
-                            syncStatus.value = 'Local Only';
-                            document.getElementById('app-loader').style.display = 'none';
-                        });
+                            syncToCloud();
+                        }
+                        
+                        cloudLoaded.value = true;
+                        document.getElementById('app-loader').style.display = 'none';
+                    }, (err) => {
+                        console.error("Firebase Listen Error:", err);
+                        syncStatus.value = 'Retry...';
+                        // 3秒後自動重試監聽
+                        setTimeout(setupSyncListener, 3000);
+                    });
+                };
 
-                    } catch (err) {
-                        console.error("Init failed:", err);
-                        syncStatus.value = 'Init Error';
+                const startApp = async () => {
+                    try {
+                        const configStr = window.__firebase_config;
+                        if (!configStr) {
+                            // 如果沒抓到配置，一秒後重試
+                            setTimeout(startApp, 1000);
+                            return;
+                        }
+
+                        if (!firebase.apps.length) firebase.initializeApp(JSON.parse(configStr));
+                        
+                        const auth = firebase.auth();
+                        // 優先執行驗證
+                        if (window.__initial_auth_token) {
+                            await auth.signInWithCustomToken(window.__initial_auth_token).catch(() => auth.signInAnonymously());
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                        
+                        // 驗證成功後開啟監聽
+                        setupSyncListener();
+
+                    } catch (e) {
+                        console.error("Init Error:", e);
+                        syncStatus.value = 'Offline (Local Only)';
                         document.getElementById('app-loader').style.display = 'none';
                     }
                 };
 
                 onMounted(() => {
-                    loadCache(); // 1. 先讀本地
-                    initializeFirebase(); // 2. 同步雲端
+                    loadCache(); 
+                    startApp();
                     
                     // 櫻花動畫
                     for(let i=0; i<8; i++) {
